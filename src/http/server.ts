@@ -13,6 +13,8 @@
  * DB) never leave this process; the public JSON is derived + safe to cache.
  */
 import express from 'express'
+import { fileURLToPath } from 'node:url'
+import { dirname, resolve } from 'node:path'
 import { config } from '../config.js'
 import * as repo from '../db/repo.js'
 import { getCard } from '../db/repo.js'
@@ -37,6 +39,10 @@ import {
 import { ROLES, FOCUS_AREAS, ANGLES, type Card } from '../types.js'
 import { renderDashboard } from './dashboard.js'
 import { currentEdition, editionLabel } from '../config.js'
+import { SOURCES } from '../ingest/sources/index.js'
+import { activeCardCountByKeyPrefix } from '../ingest/stats.js'
+
+const REPO_URL = 'https://github.com/lksbrssr/plrd-radar-curator'
 
 function formatDate(iso: string): string {
   const d = new Date(iso.replace(' ', 'T') + 'Z')
@@ -106,6 +112,15 @@ function toVoteCard(c: Card) {
 export function createServer() {
   const app = express()
   app.use(express.json())
+
+  // Focus-area icons (self-hosted, matching plrd.org/about): 3 masked PNG logos
+  // + a neurotech SVG, served at /icons/<slug>.(png|svg).
+  app.use(
+    '/icons',
+    express.static(resolve(dirname(fileURLToPath(import.meta.url)), 'icons'), {
+      maxAge: '7d',
+    }),
+  )
 
   // NOTE: no X-Frame-Options / restrictive CSP — keeps the results dashboard
   // embeddable from *.plnetwork.io (see the PL app-store rules).
@@ -228,6 +243,25 @@ export function createServer() {
     repo.touchCurator(curator.id)
     lastVoteAt.set(curator.id, now)
     res.json({ ok: true, stats: repo.voterStats(curator.id) })
+  })
+
+  // The registered ingestion sources (for the Sources view). Adding a source is
+  // a one-file PR; this reflects the registry + how many cards each source
+  // currently contributes to the pool.
+  app.get('/api/sources.json', (_req, res) => {
+    res.json({
+      repoUrl: REPO_URL,
+      sourcesDir: `${REPO_URL}/tree/main/src/ingest/sources`,
+      guideUrl: `${REPO_URL}/blob/main/src/ingest/README.md`,
+      sources: SOURCES.map((s) => ({
+        key: s.key,
+        name: s.name,
+        description: s.description,
+        homepage: s.homepage ?? null,
+        external: !!s.external,
+        cards: s.keyPrefix ? activeCardCountByKeyPrefix(s.keyPrefix) : 0,
+      })),
+    })
   })
 
   // Everything the Data view needs, in one call. Preference is decomposed with

@@ -91,13 +91,18 @@ export function renderDashboard(): string {
     border-radius:10px;padding:9px 34px 9px 12px;font-size:14px;cursor:pointer;
     background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%235f6270' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
     background-repeat:no-repeat;background-position:right 12px center;}
+  input[type="month"]{background:var(--white);color:var(--ink);border:1px solid var(--line);
+    border-radius:10px;padding:9px 12px;font-size:14px;cursor:pointer;font-family:inherit;}
+  html.dark input[type="month"]::-webkit-calendar-picker-indicator{filter:invert(0.8);}
+  .faic{display:inline-block;vertical-align:-3px;}
   /* lens panel */
   .lenspanel{background:var(--gray-50);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:18px;}
   .lenshead{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
   .lreset{background:none;border:none;color:var(--blue);font-size:12.5px;cursor:pointer;}
   .lchips{display:flex;flex-wrap:wrap;gap:8px;}
   .lchip{border:1px solid var(--line);background:var(--white);color:var(--ink);border-radius:999px;
-    padding:7px 13px;font-size:13px;cursor:pointer;transition:all .12s;}
+    padding:7px 13px;font-size:13px;cursor:pointer;transition:all .12s;
+    display:inline-flex;align-items:center;gap:7px;}
   .lchip:hover{border-color:var(--muted);}
   .lchip.on{background:var(--ink);color:var(--white);border-color:var(--ink);}
   /* carousel (recycled from plrd.org PLRadar) */
@@ -243,6 +248,21 @@ export function renderDashboard(): string {
   .vversus{text-align:center;color:var(--muted);font-size:13px;margin:0 0 10px;}
   .votefoot{display:flex;gap:16px;align-items:center;color:var(--muted);font-size:13px;flex-wrap:wrap;}
   .votefoot button,.votefoot a{color:var(--blue);background:none;border:none;cursor:pointer;font-size:13px;font-family:inherit;padding:0;}
+  /* sources view */
+  .srcgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;}
+  .srccard{background:var(--gray-50);border:1px solid var(--line);border-radius:16px;padding:18px 20px;display:flex;flex-direction:column;}
+  .srccard .top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;}
+  .srccard h3{font-size:18px;}
+  .srccard p{font-size:13px;color:var(--muted);margin:0 0 14px;flex:1;}
+  .srccard .foot{display:flex;align-items:center;justify-content:space-between;font-size:12.5px;}
+  .srccard .n{font-variant-numeric:tabular-nums;}
+  .badge-int{font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:3px 8px;border-radius:999px;background:var(--gray-200);color:var(--muted);}
+  .badge-field{background:#fdf0c8;color:#8a6d00;}
+  html.dark .badge-field{background:#3a2f12;color:#f5c451;}
+  .addsrc{border:1.5px dashed var(--line);background:transparent;border-radius:16px;padding:18px 20px;display:flex;flex-direction:column;justify-content:center;}
+  .addsrc h3{font-size:18px;margin-bottom:6px;}
+  .addsrc p{font-size:13px;color:var(--muted);margin:0 0 14px;}
+  .addsrc .btn{align-self:flex-start;}
   /* modal */
   .modal{position:fixed;inset:0;background:rgba(19,19,22,.55);display:none;align-items:center;justify-content:center;padding:20px;z-index:50;}
   .modal.open{display:flex;}
@@ -271,6 +291,7 @@ export function renderDashboard(): string {
       <button data-route="radar"><span class="ic">📡</span> Radar</button>
       <button data-route="vote"><span class="ic">🗳️</span> Vote</button>
       <button data-route="data"><span class="ic">📊</span> Data</button>
+      <button data-route="sources"><span class="ic">🛰️</span> Sources</button>
     </nav>
     <div class="side-foot">
       <button class="toggle" id="themeToggle">◐ Theme</button>
@@ -324,6 +345,18 @@ function area(s){ return AREA[s]||AREA.default; }
 function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function el(id){ return document.getElementById(id); }
 function getJSON(u){ return fetch(u).then(function(r){ return r.json(); }); }
+// Focus-area icons matching plrd.org/about (self-hosted, tinted via CSS mask).
+var FA_ICON = {
+  'digital-human-rights':'/icons/digital-human-rights.png',
+  'economies-governance':'/icons/economies-governance.png',
+  'ai-robotics':'/icons/ai-robotics.png',
+  'neurotech':'/icons/neurotech.svg'
+};
+function areaIcon(slug, px){
+  px = px||16; var u = FA_ICON[slug]; if(!u) return '';
+  return '<span class="faic" style="width:'+px+'px;height:'+px+'px;background:'+area(slug).c+
+    ';-webkit-mask:url('+u+') center/contain no-repeat;mask:url('+u+') center/contain no-repeat"></span>';
+}
 
 var state = { editions:[], edition:null, role:'', focus:[], dataSeg:'', overview:null, radar:null, cards:{} };
 try{ var saved=JSON.parse(localStorage.getItem('radar-lens')||'{}'); if(saved){ state.role=saved.role||''; state.focus=saved.focus||[]; } }catch(e){}
@@ -348,7 +381,7 @@ window.addEventListener('hashchange', render);
 function roleName(key){ var r=state.overview.lenses.roles.find(function(x){return x.key===key;}); return r?r.label:key; }
 function areaName(slug){ var a=state.overview.lenses.areas.find(function(x){return x.slug===slug;}); return a?a.label:slug; }
 function lensLabel(){
-  if(!lensActive()) return 'General Radar';
+  if(!lensActive()) return 'Radar';
   var parts=[];
   if(state.role) parts.push(roleName(state.role));
   if(state.focus.length) parts.push(state.focus.map(areaName).join(' + '));
@@ -362,25 +395,26 @@ function lensSubtitle(){
 function renderRadar(){
   var v = el('view');
   var eds = state.editions;
-  var monthOpts = eds.map(function(e){ return '<option value="'+e.edition+'"'+(e.edition===state.edition?' selected':'')+'>'+esc(e.label)+(e.current?' · voting open':'')+'</option>'; }).join('');
+  var oldest = eds.length ? eds[eds.length-1].edition : state.edition;
+  var newest = eds.length ? eds[0].edition : state.edition;
   var roleOpts = '<option value="">Any role</option>'+state.overview.lenses.roles.map(function(r){ return '<option value="'+r.key+'"'+(r.key===state.role?' selected':'')+'>'+esc(r.emoji+' '+r.label)+'</option>'; }).join('');
-  var focusChipsHtml = state.overview.lenses.areas.map(function(a){ var on=state.focus.indexOf(a.slug)>=0; return '<button class="lchip'+(on?' on':'')+'" data-focus="'+a.slug+'">'+(on?'✓ ':'')+esc(a.emoji+' '+a.label)+'</button>'; }).join('');
+  var focusChipsHtml = state.overview.lenses.areas.map(function(a){ var on=state.focus.indexOf(a.slug)>=0; return '<button class="lchip'+(on?' on':'')+'" data-focus="'+a.slug+'">'+(on?'✓ ':'')+areaIcon(a.slug)+esc(a.label)+'</button>'; }).join('');
   var curEd = eds.find(function(e){return e.edition===state.edition;})||{};
   v.innerHTML =
     '<h2 class="title">'+esc(lensLabel())+'</h2>'+
     '<p class="lead">The '+esc((state.radar&&state.radar.label)||'')+' as chosen by the crowd'+esc(lensSubtitle())+'</p>'+
     '<div class="controls">'+
-      '<div class="field"><label>Month</label><select id="selMonth">'+monthOpts+'</select></div>'+
+      '<div class="field"><label>Month</label><input type="month" id="selMonth" value="'+esc(state.edition)+'" min="'+esc(oldest)+'" max="'+esc(newest)+'"></div>'+
       '<div class="field"><label>Your role</label><select id="selRole">'+roleOpts+'</select></div>'+
     '</div>'+
     '<div class="lenspanel">'+
       '<div class="lenshead"><span class="field"><label>Your interests</label></span>'+
-        (lensActive()?'<button class="lreset" id="lreset">Reset to General Radar</button>':'')+'</div>'+
+        (lensActive()?'<button class="lreset" id="lreset">Reset to all curators</button>':'')+'</div>'+
       '<div class="lchips">'+focusChipsHtml+'</div>'+
     '</div>'+
     '<div id="radarMount"></div>'+
     '<p class="lead" style="margin-top:14px">Showing the top '+((state.radar&&state.radar.items.length)||0)+' of '+((state.radar&&state.radar.poolSize)||0)+' candidates'+(curEd.current?' still in the running this month.':' from that edition.')+'</p>';
-  el('selMonth').addEventListener('change', function(e){ state.edition=e.target.value; loadRadar(); });
+  el('selMonth').addEventListener('change', function(e){ if(e.target.value){ state.edition=e.target.value; loadRadar(); } });
   el('selRole').addEventListener('change', function(e){ state.role=e.target.value; saveLens(); loadRadar(); });
   var lr=el('lreset'); if(lr) lr.addEventListener('click', function(){ state.role=''; state.focus=[]; saveLens(); loadRadar(); });
   v.querySelectorAll('[data-focus]').forEach(function(b){ b.addEventListener('click', function(){
@@ -588,7 +622,7 @@ function renderVote(){
 
 function renderVoteOnboarding(){
   var roleOpts = '<option value="">Prefer not to say</option>'+state.overview.lenses.roles.map(function(r){ return '<option value="'+r.key+'">'+esc(r.emoji+' '+r.label)+'</option>'; }).join('');
-  var chips = state.overview.lenses.areas.map(function(a){ return '<button type="button" class="lchip" data-vfocus="'+a.slug+'">'+esc(a.emoji+' '+a.label)+'</button>'; }).join('');
+  var chips = state.overview.lenses.areas.map(function(a){ return '<button type="button" class="lchip" data-vfocus="'+a.slug+'">'+areaIcon(a.slug)+esc(a.label)+'</button>'; }).join('');
   el('view').innerHTML =
     '<h2 class="title">Vote</h2>'+
     '<p class="lead">Two cards, tap the stronger signal — the winner stays and faces a new challenger. First, a little about you so your votes count toward the right peer segment.</p>'+
@@ -694,6 +728,27 @@ function pick(slot){
   }).catch(function(){ if(loseCard) loseCard.classList.remove('leaving'); if(winCard) winCard.classList.remove('won'); vs.busy=false; });
 }
 
+// ---- Sources view ----
+function renderSources(){
+  el('view').innerHTML = '<h2 class="title">Sources</h2><div class="loading">Loading sources…</div>';
+  getJSON('/api/sources.json').then(function(d){
+    var cards = d.sources.map(function(s){
+      var badge = s.external ? '<span class="badge-int badge-field">field</span>' : '<span class="badge-int">internal</span>';
+      var home = s.homepage ? '<a href="'+esc(s.homepage)+'" target="_blank" rel="noopener">Visit →</a>' : '<span></span>';
+      return '<div class="srccard"><div class="top"><h3>'+esc(s.name)+'</h3>'+badge+'</div>'+
+        '<p>'+esc(s.description)+'</p>'+
+        '<div class="foot">'+home+'<span class="n muted">'+s.cards+' in pool</span></div></div>';
+    }).join('');
+    var add = '<div class="addsrc"><h3>➕ Add a source</h3>'+
+      '<p>Any feed, API or crawler can feed the Radar. Adding one is a one-file pull request — no infra, no secrets.</p>'+
+      '<a class="btn" href="'+esc(d.guideUrl)+'" target="_blank" rel="noopener">How to add a source →</a></div>';
+    el('view').innerHTML =
+      '<h2 class="title">Sources</h2>'+
+      '<p class="lead">Where candidate cards come from. Community sources are welcome — <a href="'+esc(d.sourcesDir)+'" target="_blank" rel="noopener">browse them on GitHub</a>.</p>'+
+      '<div class="srcgrid">'+cards+add+'</div>';
+  });
+}
+
 // ---- Modal ----
 function openCard(c){
   if(!c) return;
@@ -725,6 +780,7 @@ function render(){
   if(r==='radar'){ if(state.radar) renderRadar(); else loadRadar(); }
   else if(r==='data'){ renderData(); }
   else if(r==='vote'){ renderVote(); }
+  else if(r==='sources'){ renderSources(); }
 }
 document.querySelectorAll('#nav button').forEach(function(b){
   b.addEventListener('click', function(){ location.hash = b.getAttribute('data-route'); });
