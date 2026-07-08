@@ -12,9 +12,15 @@ mechanic). Aggregated across dozens of curators, these taps produce a robust
 ranking of what deserves to be on the Radar — plus a read on *which segments
 care about what*.
 
-> **Status:** Chunk 1 (the voting bot + ranking + read-only API) is built and
-> runs locally. Deployment (Chunk 3) and internal-source ingestion (Chunk 4) are
-> scaffolded and documented below.
+> **New here (agent or human)?** Read **[`AGENTS.md`](./AGENTS.md)** first — it's
+> the cold-start briefing: stack, hosts, how to run locally, and how to ship a
+> PR with a live preview. You should be able to start a fresh session, say
+> "we're working on the PL Radar thing, repo is `lksbrssr/plrd-radar-curator`",
+> and file a PR without a long ramp-up.
+
+> **Status:** Live in production on Fly.io (Telegram bot + web app + API). The
+> web app (Radar carousel, month + composite-lens selectors, Data view) is in
+> review. Next: in-browser voting, then internal-source ingestion.
 
 ---
 
@@ -242,15 +248,49 @@ backend is deployed and has real votes.)
 
 ---
 
+## Contributing & previews (agents + humans)
+
+**Full workflow lives in [`AGENTS.md`](./AGENTS.md).** The short version:
+
+- Branch off `main`, `npm run typecheck`, open a PR (`gh pr create --base main`).
+- **Visual change → screenshot in the PR.** Commit the PNG under
+  `docs/screenshots/` and link it **by commit SHA** (branch names have slashes
+  that break raw URLs):
+  `https://raw.githubusercontent.com/lksbrssr/plrd-radar-curator/<SHA>/docs/screenshots/foo.png`
+- **Live preview of your branch** (Vercel-style, on Fly — web-only, no bot, self-seeds demo data):
+  ```bash
+  fly deploy --config fly.preview.toml --app plrd-radar-curator-preview
+  ```
+  Then put `https://plrd-radar-curator-preview.fly.dev/` at the top of the PR.
+  **Anyone can open that URL** (public HTTPS, no login).
+
+### Multiple agents working at once
+
+Assume others are pushing in parallel:
+
+- **Rebase before merge:** `git fetch origin && git rebase origin/main` then
+  `git push --force-with-lease`. Branches go stale fast.
+- **The preview URL is shared** — *last deploy wins*, so deploying your branch
+  overwrites whoever deployed before you. Treat it as transient (deploy → demo →
+  move on). Need two previews at once? Spin up a throwaway app:
+  `fly apps create plrd-radar-curator-pr-N --org personal` → deploy with
+  `--app plrd-radar-curator-pr-N` → `fly apps destroy` it after.
+- **Only ONE Telegram bot may poll** (production). Never run `npm run dev` (bot)
+  against the prod token from a second session — use `npm run dev:serve` for UI.
+
 ## Roadmap
 
-- [x] **Chunk 1** — Voting bot MVP: onboarding, king-of-the-hill, SQLite, Elo.
-- [x] **Chunk 2** — Ranking + segment analysis + read-only JSON API.
-- [ ] **Chunk 3** — Deploy to Fly.io; ship a read-only results dashboard to the
-      PL app store; wire plrd.org to consume winners.
-- [ ] **Chunk 4** — Internal-source ingestion → candidate pool: **Doro** (news
-      crawler), **PL Platform** insights, **PL Capital** portfolio/sourcing, and
-      **focus-area lead** picks. Each source normalizes into a `cards` row.
+- [x] **Voting bot** — onboarding, king-of-the-hill, SQLite, Elo.
+- [x] **Ranking + segments** — Elo, per-role / per-focus leaderboards, read-only API.
+- [x] **Deployed to Fly.io** — bot + web + API live; results dashboard.
+- [x] **Web app** — sidebar (Radar / Vote / Data), monthly editions, swipe
+      carousel recycled from plrd.org, composite peer **lens** (role + interests).
+- [ ] **In-browser voting** — interest onboarding + king-of-the-hill on the web,
+      reusing the profile/lens concept (next PR).
+- [ ] **PL app store** — package the web app for the LabOS AI-apps dashboard.
+- [ ] **plrd.org wiring** — Radar consumes `/api/radar-candidates.json` winners.
+- [ ] **Internal-source ingestion** — **Doro** (news crawler), **PL Platform**,
+      **PL Capital** portfolio/sourcing, **focus-area lead** picks → `cards` rows.
 
 ---
 
