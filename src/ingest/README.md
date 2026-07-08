@@ -3,17 +3,31 @@
 Sources feed candidate cards into the Radar's monthly pool. Anyone can add a
 source — it's designed to be a **one-file pull request**.
 
+Each card is filed into the **edition (YYYY-MM) matching its publication month**,
+so a talk published in June lands in the June Radar and a July post in July. By
+default ingestion only accepts an allowlist of editions (currently **June & July
+2026**); older content is out of scope.
+
+## Built-in sources
+
+- **`plrd-insights`** — talks, podcasts, publications & posts from
+  `plrd.org/insights` (RSS backbone, header images scraped from the listing).
+- **`protocol-ai-blog`** — announcements & essays from `protocol.ai/blog`
+  (`protocol.ai/rss.xml`, header images via RSS `<enclosure>`).
+
 ## Run it
 
 ```bash
-npm run ingest                      # fetch all sources → current edition
-npm run ingest -- --dry             # preview only, write nothing
+npm run ingest                          # all sources → June & July 2026
+npm run ingest -- --dry                 # preview only, write nothing
 npm run ingest -- --source=plrd-insights
-npm run ingest -- --since-days=30   # only items from the last 30 days (0 = all)
+npm run ingest -- --editions=2026-07    # only a specific month
+npm run ingest -- --editions=all        # every month (ignore the allowlist)
 ```
 
-Ingestion is idempotent (upsert by card `key`), so it's safe to run repeatedly
-or on a daily cron.
+Items with no publication date can't be placed in a month and are skipped
+(reported as "undated"). Ingestion is idempotent (upsert by card `key`), so it's
+safe to run repeatedly or on a daily cron.
 
 ## Add a source (PR checklist)
 
