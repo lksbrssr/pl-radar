@@ -20,8 +20,9 @@ import {
   globalLeaderboard,
   leaderboardForRole,
   attributeWinRates,
-  rankEdition,
-  type Lens,
+  rankEditionByProfile,
+  countCuratorsMatching,
+  type Profile,
 } from '../ranking/segments.js'
 import { ROLES, FOCUS_AREAS, type Card } from '../types.js'
 import { renderDashboard } from './dashboard.js'
@@ -53,12 +54,22 @@ function toRadarItem(card: Card, rating: number) {
   }
 }
 
-/** Parse a lens query string: "general" | "role:capital" | "focus:ai-robotics". */
-function parseLens(raw: unknown): Lens {
-  const s = typeof raw === 'string' ? raw : 'general'
-  if (s.startsWith('role:')) return { type: 'role', key: s.slice(5) }
-  if (s.startsWith('focus:')) return { type: 'focus', slug: s.slice(6) }
-  return { type: 'general' }
+/**
+ * Parse the Radar profile from the query: `role=capital` and/or
+ * `focus=ai-robotics,neurotech` (comma-separated). Also accepts the legacy
+ * `lens=role:x` / `lens=focus:y` form for backward compatibility.
+ */
+function parseProfile(q: Record<string, unknown>): Profile {
+  const p: Profile = {}
+  if (typeof q.role === 'string' && q.role) p.role = q.role
+  if (typeof q.focus === 'string' && q.focus)
+    p.focus = q.focus.split(',').map((s) => s.trim()).filter(Boolean)
+  // Legacy single lens fallback.
+  if (!p.role && !p.focus && typeof q.lens === 'string') {
+    if (q.lens.startsWith('role:')) p.role = q.lens.slice(5)
+    else if (q.lens.startsWith('focus:')) p.focus = [q.lens.slice(6)]
+  }
+  return p
 }
 
 export function createServer() {
@@ -92,20 +103,21 @@ export function createServer() {
     res.json({ current: cur, editions })
   })
 
-  // The Radar for an edition, ranked through a lens (general / role / focus).
-  // Returns top `limit` cards in plrd.org's RadarItem shape.
+  // The Radar for an edition, ranked through a composite profile (role AND
+  // focus areas AND future traits). Returns top `limit` cards as RadarItems.
   app.get('/api/radar.json', (req, res) => {
     const edition = (req.query.edition as string) || currentEdition()
-    const lens = parseLens(req.query.lens)
+    const profile = parseProfile(req.query as Record<string, unknown>)
     const limit = Math.min(Number(req.query.limit) || 5, 12)
-    const ranked = rankEdition(edition, lens)
+    const ranked = rankEditionByProfile(edition, profile)
     const items = ranked
       .slice(0, limit)
       .map((row) => toRadarItem(getCard(row.id)!, row.rating))
     res.json({
       edition,
       label: editionLabel(edition),
-      lens: req.query.lens || 'general',
+      profile,
+      peers: countCuratorsMatching(profile),
       poolSize: ranked.length,
       items,
     })

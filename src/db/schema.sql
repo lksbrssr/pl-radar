@@ -79,6 +79,16 @@ CREATE TABLE IF NOT EXISTS rounds (
   completed_at TEXT
 );
 
+-- Extensible curator attributes ("who are you" answers beyond role + focus).
+-- Future onboarding questions land here as key/value rows, so adding a question
+-- never requires a schema change and the lens can filter on any of them.
+CREATE TABLE IF NOT EXISTS curator_traits (
+  curator_id  INTEGER NOT NULL REFERENCES curators(id) ON DELETE CASCADE,
+  trait_key   TEXT NOT NULL,                 -- e.g. 'seniority', 'org', 'timezone'
+  trait_value TEXT NOT NULL,
+  PRIMARY KEY (curator_id, trait_key, trait_value)
+);
+
 -- Transient per-curator state (onboarding wizard step, active voting flow).
 CREATE TABLE IF NOT EXISTS sessions (
   curator_id INTEGER PRIMARY KEY REFERENCES curators(id) ON DELETE CASCADE,

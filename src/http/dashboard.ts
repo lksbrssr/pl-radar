@@ -89,6 +89,15 @@ export function renderDashboard(): string {
     border-radius:10px;padding:9px 34px 9px 12px;font-size:14px;cursor:pointer;
     background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%235f6270' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
     background-repeat:no-repeat;background-position:right 12px center;}
+  /* lens panel */
+  .lenspanel{background:var(--gray-50);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:18px;}
+  .lenshead{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
+  .lreset{background:none;border:none;color:var(--blue);font-size:12.5px;cursor:pointer;}
+  .lchips{display:flex;flex-wrap:wrap;gap:8px;}
+  .lchip{border:1px solid var(--line);background:var(--white);color:var(--ink);border-radius:999px;
+    padding:7px 13px;font-size:13px;cursor:pointer;transition:all .12s;}
+  .lchip:hover{border-color:var(--muted);}
+  .lchip.on{background:var(--ink);color:var(--white);border-color:var(--ink);}
   /* carousel (recycled from plrd.org PLRadar) */
   .radar{border:1px solid var(--line);border-radius:18px;overflow:hidden;background:var(--white);
     box-shadow:0 8px 30px rgba(15,17,21,.06);}
@@ -245,7 +254,10 @@ function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,
 function el(id){ return document.getElementById(id); }
 function getJSON(u){ return fetch(u).then(function(r){ return r.json(); }); }
 
-var state = { editions:[], edition:null, lens:'general', overview:null, radar:null, cards:{} };
+var state = { editions:[], edition:null, role:'', focus:[], overview:null, radar:null, cards:{} };
+try{ var saved=JSON.parse(localStorage.getItem('radar-lens')||'{}'); if(saved){ state.role=saved.role||''; state.focus=saved.focus||[]; } }catch(e){}
+function saveLens(){ try{ localStorage.setItem('radar-lens', JSON.stringify({role:state.role,focus:state.focus})); }catch(e){} }
+function lensActive(){ return !!(state.role || (state.focus&&state.focus.length)); }
 
 // ---- Router ----
 function route(){ return (location.hash.replace('#','')||'radar'); }
@@ -257,34 +269,49 @@ function setActive(){
 window.addEventListener('hashchange', render);
 
 // ---- Radar view ----
+function roleName(key){ var r=state.overview.lenses.roles.find(function(x){return x.key===key;}); return r?r.label:key; }
+function areaName(slug){ var a=state.overview.lenses.areas.find(function(x){return x.slug===slug;}); return a?a.label:slug; }
 function lensLabel(){
-  if(state.lens==='general') return 'General Radar';
-  if(state.lens.indexOf('role:')===0){ var r=(state.overview.lenses.roles.find(function(x){return 'role:'+x.key===state.lens;})); return r?r.label:'Role'; }
-  if(state.lens.indexOf('focus:')===0){ var a=(state.overview.lenses.areas.find(function(x){return 'focus:'+x.slug===state.lens;})); return a?a.label:'Focus'; }
-  return 'Radar';
+  if(!lensActive()) return 'General Radar';
+  var parts=[];
+  if(state.role) parts.push(roleName(state.role));
+  if(state.focus.length) parts.push(state.focus.map(areaName).join(' + '));
+  return parts.join(' · ');
+}
+function lensSubtitle(){
+  if(!lensActive()) return ' — every curator\'s votes combined.';
+  var peers = state.radar && state.radar.peers!=null ? state.radar.peers : '';
+  return ' — what your '+(peers?peers+' ':'')+'peers ranked highest.';
 }
 function renderRadar(){
   var v = el('view');
   var eds = state.editions;
   var monthOpts = eds.map(function(e){ return '<option value="'+e.edition+'"'+(e.edition===state.edition?' selected':'')+'>'+esc(e.label)+(e.current?' · voting open':'')+'</option>'; }).join('');
-  var roleOpts = state.overview.lenses.roles.map(function(r){ return '<option value="role:'+r.key+'"'+('role:'+r.key===state.lens?' selected':'')+'>'+esc(r.emoji+' '+r.label)+'</option>'; }).join('');
-  var areaOpts = state.overview.lenses.areas.map(function(a){ return '<option value="focus:'+a.slug+'"'+('focus:'+a.slug===state.lens?' selected':'')+'>'+esc(a.emoji+' '+a.label)+'</option>'; }).join('');
+  var roleOpts = '<option value="">Any role</option>'+state.overview.lenses.roles.map(function(r){ return '<option value="'+r.key+'"'+(r.key===state.role?' selected':'')+'>'+esc(r.emoji+' '+r.label)+'</option>'; }).join('');
+  var focusChipsHtml = state.overview.lenses.areas.map(function(a){ var on=state.focus.indexOf(a.slug)>=0; return '<button class="lchip'+(on?' on':'')+'" data-focus="'+a.slug+'">'+(on?'✓ ':'')+esc(a.emoji+' '+a.label)+'</button>'; }).join('');
   var curEd = eds.find(function(e){return e.edition===state.edition;})||{};
   v.innerHTML =
     '<h2 class="title">'+esc(lensLabel())+'</h2>'+
-    '<p class="lead">The '+esc((state.radar&&state.radar.label)||'')+' as chosen by the crowd'+(state.lens==='general'?' — every curator\'s votes combined.':' — what your peers found most relevant.')+'</p>'+
+    '<p class="lead">The '+esc((state.radar&&state.radar.label)||'')+' as chosen by the crowd'+esc(lensSubtitle())+'</p>'+
     '<div class="controls">'+
       '<div class="field"><label>Month</label><select id="selMonth">'+monthOpts+'</select></div>'+
-      '<div class="field"><label>Lens</label><select id="selLens">'+
-        '<option value="general"'+(state.lens==='general'?' selected':'')+'>🌐 General Radar</option>'+
-        '<optgroup label="By role — your peers">'+roleOpts+'</optgroup>'+
-        '<optgroup label="By focus area">'+areaOpts+'</optgroup>'+
-      '</select></div>'+
+      '<div class="field"><label>Your role</label><select id="selRole">'+roleOpts+'</select></div>'+
+    '</div>'+
+    '<div class="lenspanel">'+
+      '<div class="lenshead"><span class="field"><label>Your interests</label></span>'+
+        (lensActive()?'<button class="lreset" id="lreset">Reset to General Radar</button>':'')+'</div>'+
+      '<div class="lchips">'+focusChipsHtml+'</div>'+
     '</div>'+
     '<div id="radarMount"></div>'+
     '<p class="lead" style="margin-top:14px">Showing the top '+((state.radar&&state.radar.items.length)||0)+' of '+((state.radar&&state.radar.poolSize)||0)+' candidates'+(curEd.current?' still in the running this month.':' from that edition.')+'</p>';
   el('selMonth').addEventListener('change', function(e){ state.edition=e.target.value; loadRadar(); });
-  el('selLens').addEventListener('change', function(e){ state.lens=e.target.value; loadRadar(); });
+  el('selRole').addEventListener('change', function(e){ state.role=e.target.value; saveLens(); loadRadar(); });
+  var lr=el('lreset'); if(lr) lr.addEventListener('click', function(){ state.role=''; state.focus=[]; saveLens(); loadRadar(); });
+  v.querySelectorAll('[data-focus]').forEach(function(b){ b.addEventListener('click', function(){
+    var s=b.getAttribute('data-focus'); var i=state.focus.indexOf(s);
+    if(i>=0) state.focus.splice(i,1); else state.focus.push(s);
+    saveLens(); loadRadar();
+  }); });
   mountCarousel();
 }
 
@@ -346,7 +373,10 @@ function shareX(){
   window.open('https://twitter.com/intent/tweet?text='+encodeURIComponent(text)+'&url='+encodeURIComponent(url)+'&via=PL_RnD','_blank','noopener');
 }
 function loadRadar(){
-  getJSON('/api/radar.json?edition='+state.edition+'&lens='+encodeURIComponent(state.lens)+'&limit=5').then(function(r){ state.radar=r; renderRadar(); });
+  var q='/api/radar.json?edition='+encodeURIComponent(state.edition)+'&limit=5';
+  if(state.role) q+='&role='+encodeURIComponent(state.role);
+  if(state.focus.length) q+='&focus='+encodeURIComponent(state.focus.join(','));
+  getJSON(q).then(function(r){ state.radar=r; renderRadar(); });
 }
 
 // ---- Data view ----
