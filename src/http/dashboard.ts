@@ -686,19 +686,12 @@ function applyRadarCut(){
   }
 }
 function cutToggle(){
+  // The Balanced/By-score toggle was removed; the published cut still applies
+  // (see applyRadarCut), we just don't expose the switch. Keep the methodology
+  // link so people can still learn how the cut works.
   var r=state.radar;
-  if(lensActive() || !r || !r.balancedItems || !r.scoreItems || r.scoreItems.length<2) return '';
-  var bal = state.radarCut!=='score';
-  return '<div class="cutrow">'+
-      '<div class="cuttoggle">'+
-        '<button class="ctbtn'+(bal?' on':'')+'" data-cut="balanced">Balanced</button>'+
-        '<button class="ctbtn'+(bal?'':' on')+'" data-cut="score">By score</button>'+
-      '</div>'+
-      '<a class="methlink" href="#method">Learn more about the methodology →</a>'+
-    '</div>'+
-    '<p class="cuthint">'+(bal
-      ? 'A spread across focus areas &amp; angles — strong <em>and</em> balanced.'
-      : 'Strictly the top cards by confidence-aware score.')+'</p>';
+  if(lensActive() || !r) return '';
+  return '<div class="cutrow"><a class="methlink" href="#method">Learn more about the methodology →</a></div>';
 }
 function loadRadar(){
   var q='/api/radar.json?edition='+encodeURIComponent(state.edition)+'&limit=5';
@@ -995,10 +988,13 @@ function renderCards(){
       '<input type="month" id="cMonth" value="'+esc(state.edition)+'" min="'+esc(oldest)+'" max="'+esc(newest)+'"></div>'+
       '<div class="field searchfield"><label>Search</label>'+
         '<input type="text" id="cSearch" class="searchbox" placeholder="Search cards by keyword…" value="'+esc(state.cardSearch||'')+'"></div>'+
+      '<div class="field"><label>&nbsp;</label>'+
+        '<button class="btn" id="cAdd" style="cursor:pointer;border:none;white-space:nowrap">➕ Add a card</button></div>'+
     '</div>'+
     '<div id="cardsMount"><div class="loading">Loading cards…</div></div>';
   el('cMonth').addEventListener('change', function(e){ if(e.target.value){ state.edition=e.target.value; state.cardsData=null; loadCards(); } });
   el('cSearch').addEventListener('input', function(e){ state.cardSearch=e.target.value; renderCardsGrid(); });
+  el('cAdd').addEventListener('click', function(){ openWiz('card'); });
   if(state.cardsData && state.cardsData.edition===state.edition) renderCardsGrid(); else loadCards();
 }
 function loadCards(){
@@ -1161,8 +1157,8 @@ function submitPost(path, body){
 }
 
 var wiz = { path:null, view:null, data:{}, dedup:null, sample:[], inPool:0, result:null, err:'' };
-function openWiz(){
-  wiz = { path:null, view:null, dedup:null, sample:[], inPool:0, result:null, err:'', data:{
+function openWiz(path){
+  wiz = { path:path||null, view:null, dedup:null, sample:[], inPool:0, result:null, err:'', data:{
     title:'', href:'', description:'', area:'ai-robotics', type:'Signal', source:'', angle:'', image:null, rationale:'',
     name:'', feedUrl:'', homepage:'', srcDesc:'', srcArea:''
   } };
