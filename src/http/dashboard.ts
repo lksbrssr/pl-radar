@@ -214,6 +214,21 @@ export function renderDashboard(): string {
   .vversus{text-align:center;color:var(--muted);font-size:13px;margin:0 0 10px;}
   .votefoot{display:flex;gap:16px;align-items:center;color:var(--muted);font-size:13px;flex-wrap:wrap;}
   .votefoot button,.votefoot a{color:var(--blue);background:none;border:none;cursor:pointer;font-size:13px;font-family:inherit;padding:0;}
+  /* sources view */
+  .srcgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;}
+  .srccard{background:var(--gray-50);border:1px solid var(--line);border-radius:16px;padding:18px 20px;display:flex;flex-direction:column;}
+  .srccard .top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;}
+  .srccard h3{font-size:18px;}
+  .srccard p{font-size:13px;color:var(--muted);margin:0 0 14px;flex:1;}
+  .srccard .foot{display:flex;align-items:center;justify-content:space-between;font-size:12.5px;}
+  .srccard .n{font-variant-numeric:tabular-nums;}
+  .badge-int{font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:3px 8px;border-radius:999px;background:var(--gray-200);color:var(--muted);}
+  .badge-field{background:#fdf0c8;color:#8a6d00;}
+  html.dark .badge-field{background:#3a2f12;color:#f5c451;}
+  .addsrc{border:1.5px dashed var(--line);background:transparent;border-radius:16px;padding:18px 20px;display:flex;flex-direction:column;justify-content:center;}
+  .addsrc h3{font-size:18px;margin-bottom:6px;}
+  .addsrc p{font-size:13px;color:var(--muted);margin:0 0 14px;}
+  .addsrc .btn{align-self:flex-start;}
   /* modal */
   .modal{position:fixed;inset:0;background:rgba(19,19,22,.55);display:none;align-items:center;justify-content:center;padding:20px;z-index:50;}
   .modal.open{display:flex;}
@@ -242,6 +257,7 @@ export function renderDashboard(): string {
       <button data-route="radar"><span class="ic">📡</span> Radar</button>
       <button data-route="vote"><span class="ic">🗳️</span> Vote</button>
       <button data-route="data"><span class="ic">📊</span> Data</button>
+      <button data-route="sources"><span class="ic">🛰️</span> Sources</button>
     </nav>
     <div class="side-foot">
       <button class="toggle" id="themeToggle">◐ Theme</button>
@@ -583,6 +599,27 @@ function pick(slot){
   }).catch(function(){ if(loseCard) loseCard.classList.remove('leaving'); if(winCard) winCard.classList.remove('won'); vs.busy=false; });
 }
 
+// ---- Sources view ----
+function renderSources(){
+  el('view').innerHTML = '<h2 class="title">Sources</h2><div class="loading">Loading sources…</div>';
+  getJSON('/api/sources.json').then(function(d){
+    var cards = d.sources.map(function(s){
+      var badge = s.external ? '<span class="badge-int badge-field">field</span>' : '<span class="badge-int">internal</span>';
+      var home = s.homepage ? '<a href="'+esc(s.homepage)+'" target="_blank" rel="noopener">Visit →</a>' : '<span></span>';
+      return '<div class="srccard"><div class="top"><h3>'+esc(s.name)+'</h3>'+badge+'</div>'+
+        '<p>'+esc(s.description)+'</p>'+
+        '<div class="foot">'+home+'<span class="n muted">'+s.cards+' in pool</span></div></div>';
+    }).join('');
+    var add = '<div class="addsrc"><h3>➕ Add a source</h3>'+
+      '<p>Any feed, API or crawler can feed the Radar. Adding one is a one-file pull request — no infra, no secrets.</p>'+
+      '<a class="btn" href="'+esc(d.guideUrl)+'" target="_blank" rel="noopener">How to add a source →</a></div>';
+    el('view').innerHTML =
+      '<h2 class="title">Sources</h2>'+
+      '<p class="lead">Where candidate cards come from. Community sources are welcome — <a href="'+esc(d.sourcesDir)+'" target="_blank" rel="noopener">browse them on GitHub</a>.</p>'+
+      '<div class="srcgrid">'+cards+add+'</div>';
+  });
+}
+
 // ---- Modal ----
 function openCard(c){
   if(!c) return;
@@ -614,6 +651,7 @@ function render(){
   if(r==='radar'){ if(state.radar) renderRadar(); else loadRadar(); }
   else if(r==='data'){ renderData(); }
   else if(r==='vote'){ renderVote(); }
+  else if(r==='sources'){ renderSources(); }
 }
 document.querySelectorAll('#nav button').forEach(function(b){
   b.addEventListener('click', function(){ location.hash = b.getAttribute('data-route'); });

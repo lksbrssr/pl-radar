@@ -17,6 +17,7 @@ export const plrdInsights: Source = {
   name: 'plrd.org Insights',
   description: 'Talks, podcasts, publications & posts from the PL R&D site RSS feed.',
   homepage: 'https://www.plrd.org/insights',
+  keyPrefix: 'plrd-',
   external: false,
 
   async fetch(): Promise<Candidate[]> {

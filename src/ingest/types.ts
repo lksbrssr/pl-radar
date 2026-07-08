@@ -40,6 +40,12 @@ export type Source = {
   /** Where the source lives (docs/homepage), optional. */
   homepage?: string
   /**
+   * Prefix this source uses for its card keys (e.g. "plrd-"). Lets the Sources
+   * view count how many pool cards came from this source without a schema
+   * change. Keep it unique per source.
+   */
+  keyPrefix?: string
+  /**
    * Whether this source is external field signals (true) or our own output.
    * Purely informational; each Candidate also carries its own `sourceKind`.
    */

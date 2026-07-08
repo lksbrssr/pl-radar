@@ -28,6 +28,10 @@ import {
 import { ROLES, FOCUS_AREAS, type Card } from '../types.js'
 import { renderDashboard } from './dashboard.js'
 import { currentEdition, editionLabel } from '../config.js'
+import { SOURCES } from '../ingest/sources/index.js'
+import { activeCardCountByKeyPrefix } from '../ingest/stats.js'
+
+const REPO_URL = 'https://github.com/lksbrssr/plrd-radar-curator'
 
 function formatDate(iso: string): string {
   const d = new Date(iso.replace(' ', 'T') + 'Z')
@@ -219,6 +223,25 @@ export function createServer() {
     repo.touchCurator(curator.id)
     lastVoteAt.set(curator.id, now)
     res.json({ ok: true, stats: repo.voterStats(curator.id) })
+  })
+
+  // The registered ingestion sources (for the Sources view). Adding a source is
+  // a one-file PR; this reflects the registry + how many cards each source
+  // currently contributes to the pool.
+  app.get('/api/sources.json', (_req, res) => {
+    res.json({
+      repoUrl: REPO_URL,
+      sourcesDir: `${REPO_URL}/tree/main/src/ingest/sources`,
+      guideUrl: `${REPO_URL}/blob/main/src/ingest/README.md`,
+      sources: SOURCES.map((s) => ({
+        key: s.key,
+        name: s.name,
+        description: s.description,
+        homepage: s.homepage ?? null,
+        external: !!s.external,
+        cards: s.keyPrefix ? activeCardCountByKeyPrefix(s.keyPrefix) : 0,
+      })),
+    })
   })
 
   // Everything the Data view needs, in one call.
