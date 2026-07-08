@@ -10,7 +10,7 @@
 import type { Bot } from 'grammy'
 import db from './db/index.js'
 import { coverageGaps } from './ranking/strength.js'
-import { currentEdition, editionLabel } from './config.js'
+import { activeEdition, editionLabel } from './config.js'
 
 let lastFiredDay = ''
 
@@ -43,9 +43,9 @@ export function startScheduler(bot: Bot): void {
  * confident, we send a lighter touch.
  */
 function nudgeText(): string {
-  const label = editionLabel(currentEdition())
+  const label = editionLabel(activeEdition())
   try {
-    const gap = coverageGaps()
+    const gap = coverageGaps(activeEdition())
     if (gap.needsVotes) {
       const bits: string[] = []
       if (!gap.cutResolved) bits.push(`the top-5 cut is still too close to call`)
