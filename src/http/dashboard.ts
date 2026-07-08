@@ -261,7 +261,7 @@ export function renderDashboard(): string {
   .vcard.entering{opacity:0;transform:translateY(10px) scale(.98);}
   .vcard.won{box-shadow:0 0 0 2px var(--blue);}
   /* voting progress + slow-down warning */
-  .vprogress{background:var(--gray-50);border:1px solid var(--line);border-radius:14px;padding:13px 16px;margin:2px 0 14px;}
+  .vprogress{padding:0;margin:0 0 14px;font-size:13px;color:var(--muted);}
   .vprogress .row{display:flex;justify-content:space-between;align-items:baseline;font-size:13px;margin-bottom:8px;}
   .vprogress .track{height:10px;background:var(--gray-200);border-radius:999px;overflow:hidden;}
   .vprogress .fillp{height:100%;width:0;border-radius:999px;transition:width .5s ease;
@@ -467,13 +467,13 @@ export function renderDashboard(): string {
     </div>
     <button class="hamb" id="hamb" aria-label="Menu" aria-expanded="false">☰</button>
     <nav class="nav" id="nav">
-      <button data-route="radar"><span class="ic">📡</span> Radar</button>
-      <button data-route="cards"><span class="ic">🃏</span> Cards</button>
-      <button data-route="vote"><span class="ic">🗳️</span> Vote</button>
-      <button data-route="sources"><span class="ic">🛰️</span> Sources</button>
+      <button data-route="radar">Radar</button>
+      <button data-route="vote">Vote</button>
+      <button data-route="cards">Cards</button>
+      <button data-route="sources">Sources</button>
       <div class="navgap"></div>
-      <button data-route="data"><span class="ic">📊</span> Insights</button>
-      <button data-route="method"><span class="ic">🧭</span> Methodology</button>
+      <button data-route="data">Insights</button>
+      <button data-route="method">Methodology</button>
     </nav>
     <div class="side-foot">
       <button class="toggle" id="themeToggle">◐ Theme</button>
@@ -1050,13 +1050,13 @@ function renderCardsGrid(){
 
 // ---- Methodology view (how the ranking works) ----
 // Each flow tile is a button that pops open its deep-dive in a modal.
-function mStep(n,ico,title,body,key){
+function mStep(n,title,body,key){
   return '<button class="mstep" data-meth="'+key+'"><div class="mnum">'+n+'</div>'+
-    '<div style="font-size:20px;margin-bottom:6px">'+ico+'</div><h4>'+title+'</h4><p>'+body+'</p>'+
+    '<h4>'+title+'</h4><p>'+body+'</p>'+
     '<span class="mjump">Deep-dive →</span></button>';
 }
 function ciScenario(title,ok,inL,inW,outL,outW,note){
-  return '<div class="mtile" style="padding:18px 20px"><h4>'+(ok?'✅ ':'⚡ ')+title+'</h4>'+
+  return '<div class="mtile" style="padding:18px 20px"><h4>'+title+'</h4>'+
     '<div class="cirow"><span class="cilabel">#5</span><div class="citrack"><span class="ciband in" style="left:'+inL+'%;width:'+inW+'%">#5</span></div></div>'+
     '<div class="cirow"><span class="cilabel">#6</span><div class="citrack"><span class="ciband out" style="left:'+outL+'%;width:'+outW+'%">#6</span></div></div>'+
     '<p class="cinote">'+note+'</p></div>';
@@ -1069,13 +1069,13 @@ function renderMethodology(){
     '<h2 class="title">Methodology</h2>'+
     '<p class="lead mlead">The Radar is decided by the <b>wisdom of the crowd</b>, not an editor. Here\'s how '+votes+' quick taps'+(curators?' from '+curators:'')+' become a monthly shortlist of the strongest signals — and why the ranking stays fair to every card, no matter when it entered the pool.</p>'+
     '<div class="mflow">'+
-      mStep(1,'🛰️','Sources','Candidates are ingested from public PL R&amp;D sites, then de-duplicated so each real asset is one card.','sources')+
+      mStep(1,'Sources','Candidates are ingested from public PL R&amp;D sites, then de-duplicated so each real asset is one card.','sources')+
       '<span class="marrow">→</span>'+
-      mStep(2,'🗳️','Match-ups','Curators see two cards and tap the stronger one. The winner stays and faces a fresh challenger.','vote')+
+      mStep(2,'Match-ups','Curators see two cards and tap the stronger one. The winner stays and faces a fresh challenger.','vote')+
       '<span class="marrow">→</span>'+
-      mStep(3,'📈','Ranking','Every comparison feeds a model that scores each card <em>and</em> how confident we are of that score.','rank')+
+      mStep(3,'Ranking','Every comparison feeds a model that scores each card <em>and</em> how confident we are of that score.','rank')+
       '<span class="marrow">→</span>'+
-      mStep(4,'📡','The cut','A strong, balanced top-5 becomes that month\'s Radar — once the crowd has actually decided.','cut')+
+      mStep(4,'The cut','A strong, balanced top-5 becomes that month\'s Radar — once the crowd has actually decided.','cut')+
     '</div>'+
     '<p class="lead" style="margin-top:-6px">Tap any step to dig into how it works.</p>'+
     '<div class="msec"><p class="muted" style="font-size:13px">Every vote is also decomposed into the independent pull of each angle, topic and format per segment (a conjoint-style part-worth model) — see the <a href="#data">Insights</a> view. Per-profile Radar “lenses” are coming soon. The raw votes are the single source of truth — every rating recomputes from scratch. It\'s all open source: <a href="https://github.com/lksbrssr/plrd-radar-curator" target="_blank" rel="noopener">read the code →</a></p></div>';
@@ -1086,35 +1086,35 @@ function renderMethodology(){
 
 // Deep-dive content for the methodology modals (keyed by tile).
 var METH = {
-  sources: { title:'🛰️ Sources &amp; de-duplication',
+  sources: { title:'Sources &amp; de-duplication',
     html:'<p>Candidate cards are ingested from public PL R&amp;D sources — <b>plrd.org/insights</b>, the <b>protocol.ai</b> blog and <b>PL Neuro</b> — every few hours. Each card is filed into the edition (month) it was published in. Anyone can add a source with a one-file PR (see the <a href="#sources">Sources</a> tab).</p>'+
       '<div class="mgrid">'+
-        '<div class="mtile"><div class="ico">🧩</div><h4>Content vs. card</h4><p>The same talk is often cross-posted by two sites with different titles/URLs. We resolve each to a canonical <b>content</b> by a strong identifier (its YouTube id, else a normalized URL) so cross-posts collapse to <b>one</b> card — no split votes, no duplicates.</p></div>'+
-        '<div class="mtile"><div class="ico">🔁</div><h4>Self-healing</h4><p>Dedup runs on every ingest and merges duplicates that slipped in earlier — moving their votes onto the surviving card. Votes are never lost.</p></div>'+
-        '<div class="mtile"><div class="ico">🌐</div><h4>Public today</h4><p>All current sources are public, so their content may be shown externally. Internal / proprietary feeds are coming later.</p></div>'+
+        '<div class="mtile"><h4>Content vs. card</h4><p>The same talk is often cross-posted by two sites with different titles/URLs. We resolve each to a canonical <b>content</b> by a strong identifier (its YouTube id, else a normalized URL) so cross-posts collapse to <b>one</b> card — no split votes, no duplicates.</p></div>'+
+        '<div class="mtile"><h4>Self-healing</h4><p>Dedup runs on every ingest and merges duplicates that slipped in earlier — moving their votes onto the surviving card. Votes are never lost.</p></div>'+
+        '<div class="mtile"><h4>Public today</h4><p>All current sources are public, so their content may be shown externally. Internal / proprietary feeds are coming later.</p></div>'+
       '</div>' },
-  vote: { title:'🗳️ The vote: king-of-the-hill',
+  vote: { title:'The vote: king-of-the-hill',
     html:'<p>Pairwise choices are far more reliable than 1–5 star ratings: “is A stronger than B?” is easy and consistent, while absolute scores drift between people. Each winner stays on screen and meets a new challenger, so strong cards rack up comparisons fast.</p>'+
       '<div class="mgrid">'+
-        '<div class="mtile"><div class="ico">👆</div><h4>One tap per match</h4><p>No forms, no scores — just pick the stronger signal. Two quick questions up front (role + interests) tag your votes for the <a href="#data">Insights</a> analysis.</p></div>'+
-        '<div class="mtile"><div class="ico">🐢</div><h4>Speed guard</h4><p>Rapid-fire clicks (under ~1 second) are rejected and don\'t count. We want reads, not reflexes.</p></div>'+
-        '<div class="mtile"><div class="ico">🎯</div><h4>Even coverage</h4><p>Challengers are drawn least-seen-first, so votes spread across the whole pool instead of piling onto a few cards.</p></div>'+
+        '<div class="mtile"><h4>One tap per match</h4><p>No forms, no scores — just pick the stronger signal. Two quick questions up front (role + interests) tag your votes for the <a href="#data">Insights</a> analysis.</p></div>'+
+        '<div class="mtile"><h4>Speed guard</h4><p>Rapid-fire clicks (under ~1 second) are rejected and don\'t count. We want reads, not reflexes.</p></div>'+
+        '<div class="mtile"><h4>Even coverage</h4><p>Challengers are drawn least-seen-first, so votes spread across the whole pool instead of piling onto a few cards.</p></div>'+
       '</div>' },
-  rank: { title:'📈 From votes to a confident ranking',
+  rank: { title:'From votes to a confident ranking',
     html:'<p>We model each card\'s latent strength so the chance one card beats another follows a logistic curve of their strength gap — the Bradley–Terry model, the statistical cousin of chess Elo.</p>'+
       '<div class="mformula">P( <b>i</b> beats <b>j</b> ) &nbsp;=&nbsp; σ( strength<sub>i</sub> − strength<sub>j</sub> )</div>'+
       '<div class="mgrid">'+
-        '<div class="mtile"><div class="ico">⚡</div><h4>Live Elo</h4><p>Each vote instantly nudges both cards\' ratings (K = 24). Beating a stronger card moves the needle more. This powers the instant leaderboard.</p></div>'+
-        '<div class="mtile"><div class="ico">🎓</div><h4>Confidence fit</h4><p>For the official cut we re-fit every card jointly from the whole vote history at once — order-independent — and get a standard error (uncertainty) per card.</p></div>'+
+        '<div class="mtile"><h4>Live Elo</h4><p>Each vote instantly nudges both cards\' ratings (K = 24). Beating a stronger card moves the needle more. This powers the instant leaderboard.</p></div>'+
+        '<div class="mtile"><h4>Confidence fit</h4><p>For the official cut we re-fit every card jointly from the whole vote history at once — order-independent — and get a standard error (uncertainty) per card.</p></div>'+
       '</div>'+
       '<p style="margin-top:14px"><b>Fair to newcomers.</b> Sequential Elo quietly rewards cards that have been around longer. So the published Radar ranks by a <b>conservative score</b> — rating minus uncertainty:</p>'+
       '<div class="mformula">Radar score &nbsp;=&nbsp; rating &nbsp;−&nbsp; <b>z</b> × uncertainty</div>'+
       '<p>A card only makes the cut if it\'s <em>confidently</em> good, not just luckily high on a handful of votes. A thinly-voted newcomer stays in the running all month and climbs as votes accumulate — it just isn\'t crowned until the crowd is sure.</p>' },
-  cut: { title:'📡 What makes the cut',
+  cut: { title:'What makes the cut',
     html:'<p>The top 5 by conservative score become the month\'s Radar. Two things shape that final set:</p>'+
       '<div class="mgrid">'+
-        '<div class="mtile"><div class="ico">⚖️</div><h4>Balanced composition</h4><p>Rather than five near-identical cards, we compose a <b>strong yet balanced</b> set — spreading across focus areas &amp; angles — but only ever reordering near the top, never promoting a weak card — this balanced cut is what the <a href="#radar">Radar</a> shows.</p></div>'+
-        '<div class="mtile"><div class="ico">✅</div><h4>Is it settled?</h4><p>The #5 and #6 cards set the boundary. If their confidence intervals no longer overlap, the cut is <b>settled</b>; if they overlap, the last spot is a <b>toss-up</b> and more votes decide it.</p></div>'+
+        '<div class="mtile"><h4>Balanced composition</h4><p>Rather than five near-identical cards, we compose a <b>strong yet balanced</b> set — spreading across focus areas &amp; angles — but only ever reordering near the top, never promoting a weak card — this balanced cut is what the <a href="#radar">Radar</a> shows.</p></div>'+
+        '<div class="mtile"><h4>Is it settled?</h4><p>The #5 and #6 cards set the boundary. If their confidence intervals no longer overlap, the cut is <b>settled</b>; if they overlap, the last spot is a <b>toss-up</b> and more votes decide it.</p></div>'+
       '</div>'+
       '<div class="mgrid" style="margin-top:14px">'+
         ciScenario('Settled',true,48,44,4,36,'The intervals don\'t overlap — #5 confidently clears #6.')+
