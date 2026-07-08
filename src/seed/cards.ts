@@ -45,7 +45,7 @@ export const SAMPLE_CARDS = [
     area_slug: 'ai-robotics',
     area_label: 'AI & Robotics',
     external: false,
-    image: 'https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg',
+    image: 'https://picsum.photos/seed/plrd-robotics/900/600',
   },
   {
     key: 'demo-neurotech-bci-speech',

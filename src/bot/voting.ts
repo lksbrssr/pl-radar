@@ -1,67 +1,87 @@
 /**
- * King-of-the-hill voting flow.
+ * King-of-the-hill voting flow (slot-based, image-first).
  *
- * A round is a series of pairwise match-ups. The winner of each match-up stays
- * on the throne (slot 🅰) and faces a fresh challenger (slot 🅱); the loser is
- * replaced. This is the NYT-style mechanic the product brief asked for: you get
- * the satisfaction of seeing whether your last pick survives the next challenge.
+ * A round is a series of pairwise match-ups rendered as ONE composite image
+ * (🅰 top, 🅱 bottom) that looks like the public Radar. When you tap the
+ * stronger card, that card **stays in the slot it was in** and a fresh
+ * challenger drops into the other slot — so you keep watching your pick defend
+ * its position (the NYT-style hook). The image is swapped in place via
+ * editMessageMedia, so a whole round is one live message.
  *
- * Each comparison edits the SAME message in place, so a whole round feels like
- * one live card rather than a flood of messages. Every tap is recorded as a raw
- * pairwise vote and both cards' Elo is updated (see ranking/elo.ts).
+ * Every tap is recorded as a raw pairwise vote and both cards' Elo is updated.
  */
-import type { Context } from 'grammy'
+import { InputFile, type Context } from 'grammy'
 import * as repo from '../db/repo.js'
 import { config } from '../config.js'
 import { updateRatings } from '../ranking/elo.js'
 import type { SessionState } from './session.js'
 import { copy, escapeHtml } from './copy.js'
 import { kb } from './keyboards.js'
-import { FOCUS_AREAS, type Card } from '../types.js'
-
-function areaEmoji(slug: string): string {
-  return FOCUS_AREAS.find((a) => a.slug === slug)?.emoji ?? '•'
-}
+import { renderMatchup } from './cardImage.js'
+import type { Card } from '../types.js'
 
 function truncate(s: string, n: number): string {
   return s.length > n ? s.slice(0, n - 1).trimEnd() + '…' : s
 }
 
-/** One card rendered as an HTML block for the comparison message. */
-function cardBlock(label: '🅰' | '🅱', card: Card, reigning: boolean): string {
-  const crown = reigning ? ' 👑 <i>reigning</i>' : ''
-  const meta = [areaEmoji(card.area_slug) + ' ' + card.area_label, card.type]
-    .filter(Boolean)
-    .join(' · ')
-  const src = card.source ? ` — <i>${escapeHtml(card.source)}</i>` : ''
-  const desc = card.description
-    ? `\n${escapeHtml(truncate(card.description, 160))}`
-    : ''
-  return (
-    `${label}${crown}  <code>${escapeHtml(meta)}</code>\n` +
-    `<b><a href="${card.href}">${escapeHtml(card.title)}</a></b>${src}${desc}`
-  )
-}
-
-function comparisonText(
-  champion: Card,
-  challenger: Card,
+/** Short HTML caption with tappable links so curators can open the sources. */
+function caption(
+  top: Card,
+  bottom: Card,
   index: number,
   size: number,
-  reigning: boolean,
 ): string {
   return (
-    `<b>Match-up ${index} of ${size}</b> — which is the stronger signal?\n\n` +
-    `${cardBlock('🅰', champion, reigning)}\n\n` +
-    `⚔️\n\n` +
-    `${cardBlock('🅱', challenger, false)}`
+    `<b>Match-up ${index} of ${size}</b> — tap the stronger signal. ` +
+    `👑 your pick stays put.\n\n` +
+    `🅰 <a href="${top.href}">${escapeHtml(truncate(top.title, 90))}</a>\n` +
+    `🅱 <a href="${bottom.href}">${escapeHtml(truncate(bottom.title, 90))}</a>`
   )
 }
 
-/** Resolve the round size for a curator (their cadence, else the default). */
 function roundSizeFor(curatorId: number): number {
   const c = repo.getCurator(curatorId)
   return c?.cadence && c.cadence > 0 ? c.cadence : config.roundSize
+}
+
+/** Render + send the current match-up as a fresh photo message. */
+async function sendMatchup(
+  ctx: Context,
+  s: SessionState,
+  index: number,
+  size: number,
+): Promise<void> {
+  const top = repo.getCard(s.slotAId!)!
+  const bottom = repo.getCard(s.slotBId!)!
+  const png = await renderMatchup(top, bottom, s.championSlot ?? null)
+  await ctx.replyWithPhoto(new InputFile(png), {
+    caption: caption(top, bottom, index, size),
+    parse_mode: 'HTML',
+    reply_markup: kb.vote(),
+  })
+}
+
+/** Render + swap the current match-up into the existing photo message. */
+async function editMatchup(
+  ctx: Context,
+  s: SessionState,
+  index: number,
+  size: number,
+  withButtons = true,
+  suffix = '',
+): Promise<void> {
+  const top = repo.getCard(s.slotAId!)!
+  const bottom = repo.getCard(s.slotBId!)!
+  const png = await renderMatchup(top, bottom, s.championSlot ?? null)
+  await ctx.editMessageMedia(
+    {
+      type: 'photo',
+      media: new InputFile(png),
+      caption: caption(top, bottom, index, size) + suffix,
+      parse_mode: 'HTML',
+    },
+    withButtons ? { reply_markup: kb.vote() } : {},
+  )
 }
 
 /** Start a fresh round and render the first match-up. */
@@ -75,27 +95,22 @@ export async function startRound(ctx: Context, curatorId: number): Promise<void>
   const size = roundSizeFor(curatorId)
   const roundId = repo.startRound(curatorId, size)
 
-  // First match-up: two distinct fresh cards, neither reigning yet.
-  const champion = repo.pickChallenger(curatorId, null)!
-  const challenger = repo.pickChallenger(curatorId, champion.id)!
+  const a = repo.pickChallenger(curatorId, null)!
+  const b = repo.pickChallenger(curatorId, a.id)!
 
-  const session: SessionState = {
+  const s: SessionState = {
     flow: 'voting',
     roundId,
-    championId: champion.id,
-    challengerId: challenger.id,
+    slotAId: a.id,
+    slotBId: b.id,
+    championSlot: null, // first match-up: nobody reigns yet
     comparison: 1,
     cast: 0,
-    reigning: false,
   }
-  repo.setSession(curatorId, session)
+  repo.setSession(curatorId, s)
 
   await ctx.reply(copy.roundIntro(size), { parse_mode: 'HTML' })
-  await ctx.reply(comparisonText(champion, challenger, 1, size, false), {
-    parse_mode: 'HTML',
-    reply_markup: kb.vote(),
-    link_preview_options: { is_disabled: true },
-  })
+  await sendMatchup(ctx, s, 1, size)
 }
 
 /** Handle every `vote:*` callback. Returns true if it consumed the callback. */
@@ -115,69 +130,71 @@ export async function handleVotingCallback(
     return true
   }
 
-  const session = repo.getSession<SessionState>(from.id)
-  if (session.flow !== 'voting' || !session.roundId) {
+  const s = repo.getSession<SessionState>(from.id)
+  if (s.flow !== 'voting' || !s.roundId) {
     await ctx.answerCallbackQuery({ text: 'That round has ended.' }).catch(() => {})
     return true
   }
 
-  const champion = repo.getCard(session.championId!)
-  const challenger = repo.getCard(session.challengerId!)
-  if (!champion || !challenger) {
-    await ctx.answerCallbackQuery({ text: 'Cards unavailable.' }).catch(() => {})
-    return true
-  }
-
   const size = roundSizeFor(from.id)
+  const index = s.comparison ?? 1
 
-  // --- Skip: swap in a new challenger, no vote recorded. ---
+  // --- Skip: swap a new card into the non-reigning slot, no vote. ---
   if (action === 'skip') {
-    const next = repo.pickChallenger(from.id, champion.id)
+    // Replace slot B by default; if A reigns keep A, if B reigns replace A.
+    const replaceSlot: 'a' | 'b' = s.championSlot === 'b' ? 'a' : 'b'
+    const keepId = replaceSlot === 'a' ? s.slotBId! : s.slotAId!
+    const next = repo.pickChallenger(from.id, keepId)
     if (next) {
-      session.challengerId = next.id
-      repo.setSession(from.id, session)
-      await ctx.editMessageText(
-        comparisonText(champion, next, session.comparison!, size, session.reigning!),
-        {
-          parse_mode: 'HTML',
-          reply_markup: kb.vote(),
-          link_preview_options: { is_disabled: true },
-        },
-      )
+      if (replaceSlot === 'a') s.slotAId = next.id
+      else s.slotBId = next.id
+      repo.setSession(from.id, s)
+      await editMatchup(ctx, s, index, size)
     }
     await ctx.answerCallbackQuery({ text: 'Skipped ⏭' }).catch(() => {})
     return true
   }
 
-  // --- A real vote. Determine winner/loser. ---
-  const winner = action === 'a' ? champion : challenger
-  const loser = action === 'a' ? challenger : champion
-  const next = updateRatings(winner.rating, loser.rating)
+  if (action !== 'a' && action !== 'b') {
+    await ctx.answerCallbackQuery().catch(() => {})
+    return true
+  }
+
+  // --- A real vote. The picked slot's card wins and STAYS in its slot. ---
+  const winnerSlot: 'a' | 'b' = action
+  const loserSlot: 'a' | 'b' = action === 'a' ? 'b' : 'a'
+  const winner = repo.getCard(winnerSlot === 'a' ? s.slotAId! : s.slotBId!)
+  const loser = repo.getCard(loserSlot === 'a' ? s.slotAId! : s.slotBId!)
+  if (!winner || !loser) {
+    await ctx.answerCallbackQuery({ text: 'Cards unavailable.' }).catch(() => {})
+    return true
+  }
+
+  const rated = updateRatings(winner.rating, loser.rating)
   repo.recordVote({
     curatorId: from.id,
     winnerId: winner.id,
     loserId: loser.id,
-    roundId: session.roundId,
-    newWinnerRating: next.winner,
-    newLoserRating: next.loser,
+    roundId: s.roundId,
+    newWinnerRating: rated.winner,
+    newLoserRating: rated.loser,
   })
-  session.cast = (session.cast ?? 0) + 1
+  s.cast = (s.cast ?? 0) + 1
+  s.championSlot = winnerSlot // the winner now reigns, in its current slot
 
   // Round finished?
-  if (session.cast >= size) {
-    repo.completeRound(session.roundId)
-    repo.clearSession(from.id)
-    await ctx.editMessageText(
-      comparisonText(
-        { ...winner, rating: next.winner },
-        { ...loser, rating: next.loser },
-        session.comparison!,
-        size,
-        session.reigning!,
-      ) + `\n\n<i>✔ You picked ${action === 'a' ? '🅰' : '🅱'}</i>`,
-      { parse_mode: 'HTML', link_preview_options: { is_disabled: true } },
+  if (s.cast >= size) {
+    repo.completeRound(s.roundId)
+    await editMatchup(
+      ctx,
+      s,
+      index,
+      size,
+      false,
+      `\n\n<i>✔ You picked ${winnerSlot === 'a' ? '🅰' : '🅱'}</i>`,
     )
-    await ctx.reply(copy.roundComplete(session.cast), {
+    repo.clearSession(from.id)
+    await ctx.reply(copy.roundComplete(s.cast), {
       parse_mode: 'HTML',
       reply_markup: kb.another(),
     })
@@ -185,37 +202,21 @@ export async function handleVotingCallback(
     return true
   }
 
-  // King of the hill: winner stays, new challenger enters.
-  const newChallenger = repo.pickChallenger(from.id, winner.id)
-  if (!newChallenger) {
-    // Pool exhausted — end early but gracefully.
-    repo.completeRound(session.roundId)
+  // King of the hill: winner stays in its slot; challenger enters the loser's.
+  const challenger = repo.pickChallenger(from.id, winner.id)
+  if (!challenger) {
+    repo.completeRound(s.roundId)
     repo.clearSession(from.id)
-    await ctx.reply(copy.roundComplete(session.cast), { parse_mode: 'HTML' })
+    await ctx.reply(copy.roundComplete(s.cast), { parse_mode: 'HTML' })
     await ctx.answerCallbackQuery().catch(() => {})
     return true
   }
+  if (loserSlot === 'a') s.slotAId = challenger.id
+  else s.slotBId = challenger.id
+  s.comparison = index + 1
+  repo.setSession(from.id, s)
 
-  session.championId = winner.id
-  session.challengerId = newChallenger.id
-  session.comparison = (session.comparison ?? 1) + 1
-  session.reigning = true
-  repo.setSession(from.id, session)
-
-  await ctx.editMessageText(
-    comparisonText(
-      { ...winner, rating: next.winner },
-      newChallenger,
-      session.comparison,
-      size,
-      true,
-    ),
-    {
-      parse_mode: 'HTML',
-      reply_markup: kb.vote(),
-      link_preview_options: { is_disabled: true },
-    },
-  )
+  await editMatchup(ctx, s, s.comparison, size)
   await ctx.answerCallbackQuery({ text: '👑 Your pick stays on!' }).catch(() => {})
   return true
 }
