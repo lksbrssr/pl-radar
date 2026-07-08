@@ -60,6 +60,26 @@ or on a daily cron.
 3. `npm run ingest -- --source=my-source --dry` to sanity-check the output,
    then open a PR. Include a screenshot or the dry-run output.
 
+> Tip: the web app's **Sources → Add a source or card** walkthrough generates a
+> ready-to-paste prompt for a coding agent (Claude Code, Cursor, …) that does all
+> of the above for you.
+
+## Submit a single card (no recurring source)
+
+If you just want to drop in **one** item once — a specific talk, paper, post or
+signal — you don't need a whole source. Add it to the hand-curated
+`community` source instead:
+
+1. Open `src/ingest/sources/community.ts` (create it if missing) exporting a
+   `Source` with `key: 'community'`, `keyPrefix: 'community-'`, `external: true`,
+   and a `fetch()` that returns a hard-coded `Candidate[]` (no network, no DB).
+2. Append your card as a `Candidate` with a stable `key` (e.g.
+   `community-<slug>`), `sourceKind: 'field'`, and a valid `areaSlug`.
+3. Register it in `index.ts` (only needed the first time the file is created).
+4. `npm run typecheck` and `npm run ingest -- --source=community --dry`, then PR.
+
+The Sources walkthrough in the web app can generate this prompt for you too.
+
 ## Rules
 
 - **`fetch()` is read-only** — return `Candidate[]`, never touch the database.

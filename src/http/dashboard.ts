@@ -279,7 +279,7 @@ export function renderDashboard(): string {
   .addsrc{border:1.5px dashed var(--line);background:transparent;border-radius:16px;padding:18px 20px;display:flex;flex-direction:column;justify-content:center;}
   .addsrc h3{font-size:18px;margin-bottom:6px;}
   .addsrc p{font-size:13px;color:var(--muted);margin:0 0 14px;}
-  .addsrc .btn{align-self:flex-start;}
+  .addsrc .btn{align-self:flex-start;cursor:pointer;border:none;}
   /* cards view */
   .cardsec{margin-bottom:26px;}
   .cardsec .kicker{display:block;margin-bottom:12px;}
@@ -315,6 +315,56 @@ export function renderDashboard(): string {
   .ciband.in{background:linear-gradient(90deg,#3966FE,#12bfdf);}
   .ciband.out{background:var(--muted);}
   .cinote{font-size:12.5px;color:var(--muted);margin:8px 0 0;}
+  /* add-source wizard */
+  .wizsheet{max-width:640px;position:relative;}
+  .wizhead{padding:24px 24px 0;}
+  .wizhead h3{font-family:Newsreader,serif;font-size:24px;margin:0 0 3px;}
+  .wizhead .sub{color:var(--muted);font-size:13px;}
+  .wizsteps{display:flex;gap:6px;margin:16px 0 0;}
+  .wizsteps .st{flex:1;height:4px;border-radius:999px;background:var(--gray-200);}
+  .wizsteps .st.on{background:var(--ink);}
+  .wizbody{padding:20px 24px 4px;}
+  .wizbody h4{font-family:Inter,sans-serif;font-weight:600;font-size:15px;margin:0 0 8px;}
+  .wizbody p{font-size:14px;color:var(--ink-soft);margin:0 0 14px;}
+  .wizbody p.muted{color:var(--muted);}
+  .wizfoot{display:flex;justify-content:space-between;gap:10px;align-items:center;
+    padding:14px 24px 22px;border-top:1px solid var(--line);margin-top:14px;}
+  .btn-ghost{display:inline-block;background:transparent;color:var(--ink);border:1px solid var(--line);
+    border-radius:999px;padding:11px 20px;font-size:14px;font-weight:500;cursor:pointer;}
+  .btn-ghost:hover{background:var(--gray-50);}
+  .btn.btn-sm{padding:7px 13px;font-size:12.5px;cursor:pointer;border:none;}
+  .pathgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .pathcard{text-align:left;background:var(--gray-50);border:1.5px solid var(--line);border-radius:16px;
+    padding:18px;cursor:pointer;transition:border-color .12s,transform .12s;font-family:inherit;color:var(--ink);}
+  .pathcard:hover{border-color:var(--ink);transform:translateY(-1px);}
+  .pathcard .em{font-size:26px;display:block;margin-bottom:8px;}
+  .pathcard h4{font-size:16px;margin:0 0 6px;}
+  .pathcard p{font-size:12.5px;color:var(--muted);margin:0;}
+  .wizbody .field{margin-bottom:14px;display:block;}
+  .wizbody .field label{display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
+    color:var(--muted);margin-bottom:5px;}
+  .wizbody .field input,.wizbody .field textarea,.wizbody .field select{width:100%;padding:10px 12px;border:1px solid var(--line);
+    border-radius:10px;background:var(--white);color:var(--ink);font-family:inherit;font-size:14px;}
+  .wizbody .field textarea{resize:vertical;min-height:62px;}
+  .wizbody .field .hint{font-size:11.5px;color:var(--muted);margin-top:5px;}
+  .numlist{list-style:none;padding:0;margin:0 0 14px;counter-reset:n;}
+  .numlist li{position:relative;padding:2px 0 12px 34px;font-size:13.5px;color:var(--ink-soft);}
+  .numlist li:last-child{padding-bottom:0;}
+  .numlist li:before{counter-increment:n;content:counter(n);position:absolute;left:0;top:0;
+    width:22px;height:22px;border-radius:50%;background:var(--ink);color:var(--white);
+    font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;}
+  .promptbox{position:relative;background:var(--gray-50);border:1px solid var(--line);border-radius:12px;
+    padding:14px;margin-bottom:8px;}
+  .promptbox pre{margin:0;white-space:pre-wrap;word-break:break-word;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:1.55;
+    color:var(--ink);max-height:240px;overflow-y:auto;padding-right:2px;}
+  .promptbox .copy{position:absolute;top:10px;right:10px;}
+  .repochip{display:inline-flex;align-items:center;gap:6px;background:var(--gray-200);border-radius:999px;
+    padding:5px 12px;font-size:12.5px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;margin-bottom:14px;}
+  .calloutbox{background:var(--gray-100);border:1px solid var(--line);border-radius:12px;padding:14px;
+    font-size:13px;color:var(--ink-soft);margin-bottom:14px;line-height:1.55;}
+  .calloutbox strong{color:var(--ink);}
+  @media(max-width:560px){ .pathgrid{grid-template-columns:1fr;} }
   /* modal */
   .modal{position:fixed;inset:0;background:rgba(19,19,22,.55);display:none;align-items:center;justify-content:center;padding:20px;z-index:50;}
   .modal.open{display:flex;}
@@ -376,6 +426,14 @@ export function renderDashboard(): string {
   <h3>Whoa — slow down a sec</h3>
   <p>You're voting very fast. Take a moment to actually read each card — rapid-fire clicks don't count toward the Radar.</p>
   <button class="btn" id="warngot">Got it — I'll read them</button>
+</div></div>
+
+<div class="modal" id="wizmodal"><div class="sheet wizsheet">
+  <button class="close" id="wizclose">×</button>
+  <div class="wizhead"><h3 id="wiz-h"></h3><div class="sub" id="wiz-sub"></div>
+    <div class="wizsteps" id="wiz-steps"></div></div>
+  <div class="wizbody" id="wiz-body"></div>
+  <div class="wizfoot" id="wiz-foot"></div>
 </div></div>
 
 <script>
@@ -800,6 +858,7 @@ function pick(slot){
 function renderSources(){
   el('view').innerHTML = '<h2 class="title">Sources</h2><div class="loading">Loading sources…</div>';
   getJSON('/api/sources.json').then(function(d){
+    repoMeta = { repoUrl:d.repoUrl, guideUrl:d.guideUrl, sourcesDir:d.sourcesDir };
     var cards = d.sources.map(function(s){
       var badge = s.external ? '<span class="badge-int badge-field">field</span>' : '<span class="badge-int">internal</span>';
       var home = s.homepage ? '<a href="'+esc(s.homepage)+'" target="_blank" rel="noopener">Visit →</a>' : '<span></span>';
@@ -807,13 +866,14 @@ function renderSources(){
         '<p>'+esc(s.description)+'</p>'+
         '<div class="foot">'+home+'<span class="n muted">'+s.cards+' in pool</span></div></div>';
     }).join('');
-    var add = '<div class="addsrc"><h3>➕ Add a source</h3>'+
-      '<p>Any feed, API or crawler can feed the Radar. Adding one is a one-file pull request — no infra, no secrets.</p>'+
-      '<a class="btn" href="'+esc(d.guideUrl)+'" target="_blank" rel="noopener">How to add a source →</a></div>';
+    var add = '<div class="addsrc"><h3>➕ Add a source or card</h3>'+
+      '<p>Feed the Radar a whole new source, or just drop in a single card. A guided walkthrough hands the work to your coding agent — one small pull request, no infra, no secrets.</p>'+
+      '<button class="btn" id="opensrc">Start the walkthrough →</button></div>';
     el('view').innerHTML =
       '<h2 class="title">Sources</h2>'+
-      '<p class="lead">Where candidate cards come from. Community sources are welcome — <a href="'+esc(d.sourcesDir)+'" target="_blank" rel="noopener">browse them on GitHub</a>.</p>'+
+      '<p class="lead">Where candidate cards come from. Community contributions are welcome — <a href="'+esc(d.sourcesDir)+'" target="_blank" rel="noopener">browse them on GitHub</a>.</p>'+
       '<div class="srcgrid">'+cards+add+'</div>';
+    var ob=el('opensrc'); if(ob) ob.onclick=openWiz;
   });
 }
 
@@ -920,6 +980,236 @@ function renderMethodology(){
     '<div class="msec"><p class="muted" style="font-size:13px">The raw votes are the single source of truth — every rating can be recomputed from scratch. It\'s all open source: <a href="https://github.com/lksbrssr/plrd-radar-curator" target="_blank" rel="noopener">read the code →</a></p></div>';
 }
 
+// ---- Add-source / add-card wizard ----
+var AREAS_W = [
+  {slug:'digital-human-rights',label:'Digital Human Rights'},
+  {slug:'economies-governance',label:'Economies & Governance'},
+  {slug:'ai-robotics',label:'AI & Robotics'},
+  {slug:'neurotech',label:'Neurotech'}
+];
+var TYPES_W = ['Talk','Podcast','Publication','Blog','Signal'];
+var repoMeta = {
+  repoUrl:'https://github.com/lksbrssr/plrd-radar-curator',
+  guideUrl:'https://github.com/lksbrssr/plrd-radar-curator/blob/main/src/ingest/README.md',
+  sourcesDir:'https://github.com/lksbrssr/plrd-radar-curator/tree/main/src/ingest/sources'
+};
+var wiz = { path:null, step:0, data:{} };
+
+function openWiz(){
+  wiz = { path:null, step:0, data:{
+    name:'', url:'', homepage:'', description:'',
+    title:'', cardUrl:'', cardDesc:'', area:'ai-robotics', type:'Signal', source:''
+  } };
+  el('wizmodal').classList.add('open');
+  renderWiz();
+}
+function closeWiz(){ el('wizmodal').classList.remove('open'); }
+// Client-side slug (mirrors src/ingest/util.ts slugify; slugify is server-only).
+function wizSlug(s){ return String(s||'').toLowerCase().replace(/https?:\/\//,'').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,60); }
+function wizKey(){ return wizSlug(wiz.data.name) || 'my-source'; }
+function repoShort(){ return repoMeta.repoUrl.replace('https://github.com/',''); }
+
+function wizTitles(){
+  if(wiz.path==='source') return [
+    {h:'How sources work', s:'A feed the Radar checks every day'},
+    {h:'Describe your source', s:'A few details so we can write the prompt'},
+    {h:'Hand it to your agent', s:'Copy this into your coding agent'},
+    {h:'What happens next', s:'From merged PR to the monthly Radar'}
+  ];
+  return [
+    {h:'Submitting one card', s:'Add a single item, just this once'},
+    {h:'Card details', s:'What is this card about?'},
+    {h:'Hand it to your agent', s:'Copy this into your coding agent'},
+    {h:'What happens next', s:'From merged PR to the pool'}
+  ];
+}
+
+function renderWiz(){
+  if(wiz.path===null){ renderWizChoice(); return; }
+  var t=wizTitles(), cur=t[wiz.step];
+  el('wiz-h').textContent=cur.h; el('wiz-sub').textContent=cur.s;
+  el('wiz-steps').style.display='flex';
+  el('wiz-steps').innerHTML=t.map(function(_,i){ return '<span class="st'+(i<=wiz.step?' on':'')+'"></span>'; }).join('');
+  var srcSteps=[wizSrcIntro,wizSrcForm,wizSrcPrompt,wizSrcAfter];
+  var cardSteps=[wizCardIntro,wizCardForm,wizCardPrompt,wizCardAfter];
+  el('wiz-body').innerHTML = (wiz.path==='source'?srcSteps:cardSteps)[wiz.step]();
+  var back='<button class="btn-ghost" id="wiz-back">'+(wiz.step===0?'← Choose again':'← Back')+'</button>';
+  var next='<button class="btn" id="wiz-next">'+(wiz.step<3?'Next →':'Done')+'</button>';
+  el('wiz-foot').style.display='flex';
+  el('wiz-foot').innerHTML=back+next;
+  el('wiz-back').onclick=wizBack; el('wiz-next').onclick=wizNext;
+  bindWizInputs(); bindWizCopy();
+  var ts=el('wiz-toseg'); if(ts) ts.onclick=function(ev){ ev.preventDefault(); wiz.path='source'; wiz.step=0; renderWiz(); };
+}
+function wizBack(){ if(wiz.step===0){ wiz.path=null; renderWiz(); } else { wiz.step--; renderWiz(); } }
+function wizNext(){ if(wiz.step>=3){ closeWiz(); } else { wiz.step++; renderWiz(); } }
+
+function renderWizChoice(){
+  el('wiz-h').textContent='Add to the Radar';
+  el('wiz-sub').textContent='Two ways to get new cards into the pool';
+  el('wiz-steps').style.display='none'; el('wiz-steps').innerHTML='';
+  el('wiz-body').innerHTML=
+    '<p>Everything on the Radar starts as a candidate card. You can wire up a feed the Radar re-checks daily, or drop in a single item — either way it lands as one small pull request.</p>'+
+    '<div class="pathgrid">'+
+    '<button class="pathcard" data-path="source"><span class="em">🛰️</span><h4>Recurring source</h4><p>A feed or API the Radar re-checks about once a day. Best for an ongoing stream of candidates.</p></button>'+
+    '<button class="pathcard" data-path="card"><span class="em">🃏</span><h4>Single card</h4><p>Add one talk, paper or post — just this once, no recurring fetch.</p></button>'+
+    '</div>';
+  el('wiz-foot').style.display='flex';
+  el('wiz-foot').innerHTML='<span class="muted" style="font-size:12.5px;">You\'ll need a GitHub account and a coding agent (Claude Code, Cursor…).</span>';
+  Array.prototype.forEach.call(el('wiz-body').querySelectorAll('.pathcard'),function(c){
+    c.onclick=function(){ wiz.path=c.getAttribute('data-path'); wiz.step=0; renderWiz(); };
+  });
+}
+
+// -- Source path bodies --
+function wizSrcIntro(){
+  return ''+
+  '<p>A <strong>source</strong> is a small file that knows how to fetch candidate cards from somewhere — an RSS feed, a JSON API, a crawler. Adding one is a single-file pull request: no infrastructure, no secrets.</p>'+
+  '<div class="calloutbox">Once your PR is merged, the Radar queries your source <strong>automatically, about once a day</strong>. New items become candidate cards in the current month\'s pool, curators vote them up or down, and the top cards become that month\'s Radar.</div>'+
+  '<p class="muted" style="font-size:12.5px;">You\'ll drive this with a coding agent (Claude Code, Cursor, Copilot…). We\'ll generate the exact prompt to paste in — you won\'t write the code yourself.</p>';
+}
+function wizSrcForm(){
+  var d=wiz.data;
+  return ''+
+  '<div class="field"><label>Source name</label><input id="w-name" value="'+esc(d.name)+'" placeholder="e.g. Protocol Labs Blog"><div class="hint">File will be created as src/ingest/sources/<span id="w-key">'+esc(wizKey())+'</span>.ts</div></div>'+
+  '<div class="field"><label>Feed or API URL</label><input id="w-url" value="'+esc(d.url)+'" placeholder="https://example.com/feed.xml"></div>'+
+  '<div class="field"><label>Homepage (optional)</label><input id="w-home" value="'+esc(d.homepage)+'" placeholder="https://example.com"></div>'+
+  '<div class="field"><label>What it pulls in</label><textarea id="w-desc" placeholder="One line describing the cards this brings in.">'+esc(d.description)+'</textarea></div>';
+}
+function wizSrcPrompt(){
+  return ''+
+  '<p>Open your coding agent inside a clone or fork of the repo — or just point it at the GitHub URL — then paste the prompt below. It will write the file, run a dry-run, and open the pull request for you.</p>'+
+  '<div class="repochip">📦 '+esc(repoShort())+'</div>'+
+  '<ol class="numlist">'+
+  '<li>Open Claude Code, Cursor, or your agent of choice in the repo.</li>'+
+  '<li>Paste the prompt below and let it work.</li>'+
+  '<li>Review the diff, then approve the pull request it opens.</li>'+
+  '</ol>'+
+  '<div class="promptbox"><button class="btn btn-sm copy" id="wiz-copy">Copy</button><pre id="wiz-prompt">'+esc(promptSource())+'</pre></div>';
+}
+function wizSrcAfter(){
+  return ''+
+  '<p>Here\'s the whole lifecycle once you open that pull request:</p>'+
+  '<ol class="numlist">'+
+  '<li>A maintainer reviews and merges your one-file PR.</li>'+
+  '<li>From then on the Radar runs your source <strong>automatically, about once a day</strong>.</li>'+
+  '<li>Fresh items become candidate cards in the current month\'s pool.</li>'+
+  '<li>Curators vote on pairwise match-ups; an Elo ranking sorts the pool.</li>'+
+  '<li>The top cards become that month\'s published Radar.</li>'+
+  '</ol>'+
+  '<div class="calloutbox">Nothing to maintain afterwards — as long as your feed keeps publishing, the Radar keeps picking it up. <a href="'+esc(repoMeta.sourcesDir)+'" target="_blank" rel="noopener">Browse existing sources →</a></div>';
+}
+
+// -- Single-card path bodies --
+function wizCardIntro(){
+  return ''+
+  '<p>A single card is a one-off: you\'re adding one specific talk, paper, post or signal you think belongs on the Radar — with no recurring feed to maintain.</p>'+
+  '<div class="calloutbox">Your card joins the shared <strong>Community picks</strong> source as a fixed entry. It enters the current month\'s pool and competes for a spot like everything else — curators vote it up or down.</div>'+
+  '<p class="muted" style="font-size:12.5px;">You\'ll submit it as a tiny pull request. We\'ll generate the exact prompt for your coding agent — no coding required.</p>';
+}
+function wizCardForm(){
+  var d=wiz.data;
+  return ''+
+  '<div class="field"><label>Title</label><input id="w-title" value="'+esc(d.title)+'" placeholder="Title of the talk / paper / post"></div>'+
+  '<div class="field"><label>URL</label><input id="w-curl" value="'+esc(d.cardUrl)+'" placeholder="https://…"></div>'+
+  '<div class="field"><label>Description</label><textarea id="w-cdesc" placeholder="A sentence or two on why it matters.">'+esc(d.cardDesc)+'</textarea></div>'+
+  '<div class="field"><label>Focus area</label><select id="w-area">'+AREAS_W.map(function(a){ return '<option value="'+a.slug+'"'+(a.slug===d.area?' selected':'')+'>'+esc(a.label)+'</option>'; }).join('')+'</select></div>'+
+  '<div class="field"><label>Type</label><select id="w-type">'+TYPES_W.map(function(t){ return '<option'+(t===d.type?' selected':'')+'>'+t+'</option>'; }).join('')+'</select></div>'+
+  '<div class="field"><label>Source attribution (optional)</label><input id="w-src" value="'+esc(d.source)+'" placeholder="Who to credit, e.g. MIT, a16z, author name"></div>';
+}
+function wizCardPrompt(){
+  return ''+
+  '<p>Paste the prompt below into your coding agent. It will add your card to the Community picks source and open the pull request.</p>'+
+  '<div class="repochip">📦 '+esc(repoShort())+'</div>'+
+  '<ol class="numlist">'+
+  '<li>Open Claude Code, Cursor, or your agent of choice in the repo.</li>'+
+  '<li>Paste the prompt below and let it work.</li>'+
+  '<li>Review the diff, then approve the pull request it opens.</li>'+
+  '</ol>'+
+  '<div class="promptbox"><button class="btn btn-sm copy" id="wiz-copy">Copy</button><pre id="wiz-prompt">'+esc(promptCard())+'</pre></div>';
+}
+function wizCardAfter(){
+  return ''+
+  '<ol class="numlist">'+
+  '<li>A maintainer reviews and merges your PR.</li>'+
+  '<li>On the next daily run your card enters the current month\'s pool.</li>'+
+  '<li>Curators vote on it in pairwise match-ups.</li>'+
+  '<li>If it earns enough support, it lands in the published Radar.</li>'+
+  '</ol>'+
+  '<div class="calloutbox">One card, one time — there\'s nothing to maintain. Want an ongoing stream instead? <a href="#" id="wiz-toseg">Add a recurring source →</a></div>';
+}
+
+// -- Prompt generators --
+function promptSource(){
+  var d=wiz.data, k=wizKey(), r=repoMeta.repoUrl;
+  return [
+'You are helping me add a new data source to the PL R&D Radar crowd-curation project.',
+'',
+'REPOSITORY: '+r,
+'Open your pull request against this repo, targeting the main branch. If you do not have push access, fork it first and open the PR from your fork.',
+'',
+'GOAL: add an ingestion source that pulls candidate cards from:',
+'  - Source name: '+(d.name||'(name)'),
+'  - Feed / API URL: '+(d.url||'(url)'),
+'  - Homepage: '+(d.homepage||'(none)'),
+'  - What it pulls in: '+(d.description||'(one-line description)'),
+'',
+'STEPS:',
+'1. Read src/ingest/README.md and src/ingest/types.ts to learn the Source contract.',
+'2. Use src/ingest/sources/plrd-insights.ts as a reference implementation.',
+'3. Create src/ingest/sources/'+k+'.ts exporting a Source. Its fetch() MUST be read-only: return Candidate[], never touch the database. Reuse helpers from src/ingest/util.ts (parseRss, slugify, inferArea, inferType, areaLabel). Set key: "'+k+'" and keyPrefix: "'+k+'-", and give every card a stable, unique key starting with "'+k+'-".',
+'4. Register the source in src/ingest/sources/index.ts.',
+'5. Verify with: npm run ingest -- --source='+k+' --dry   and   npm run typecheck',
+'6. Open a PR to '+r+' with a short summary and the --dry output.',
+'',
+'RULES: no secrets in the repo (read any API key from an env var and document it), keep dependencies minimal, and areaSlug must be one of: digital-human-rights, economies-governance, ai-robotics, neurotech.'
+  ].join('\n');
+}
+function promptCard(){
+  var d=wiz.data, r=repoMeta.repoUrl;
+  var key='community-'+(wizSlug(d.title)||'card');
+  return [
+'You are helping me submit a SINGLE card (a one-time entry, not a recurring source) to the PL R&D Radar crowd-curation project.',
+'',
+'REPOSITORY: '+r,
+'Open your pull request against the main branch. Fork first if you lack push access.',
+'',
+'CARD TO ADD:',
+'  - Title: '+(d.title||'(title)'),
+'  - URL: '+(d.cardUrl||'(url)'),
+'  - Description: '+(d.cardDesc||'(one or two sentences)'),
+'  - Focus area (areaSlug): '+d.area,
+'  - Type: '+d.type,
+'  - Source attribution: '+(d.source||'Community'),
+'',
+'STEPS:',
+'1. Read src/ingest/README.md and src/ingest/types.ts, and look at src/ingest/sources/plrd-insights.ts.',
+'2. Open src/ingest/sources/community.ts. If it does not exist, create it: export a Source with key "community", name "Community picks", keyPrefix "community-", external: true, and a fetch() that returns a hard-coded array of Candidate objects (no network, no DB).',
+'3. Append this card to that array as a Candidate with key "'+key+'", the title, description, href (the URL above), source (the attribution above), sourceKind: "field", type, areaSlug, and areaLabel (use areaLabel() from util.js).',
+'4. If you just created community.ts, register it in src/ingest/sources/index.ts.',
+'5. Verify with: npm run typecheck   and   npm run ingest -- --source=community --dry',
+'6. Open a PR to '+r+' describing the card you added.'
+  ].join('\n');
+}
+
+function bindWizInputs(){
+  var map={ 'w-name':'name','w-url':'url','w-home':'homepage','w-desc':'description',
+    'w-title':'title','w-curl':'cardUrl','w-cdesc':'cardDesc','w-src':'source','w-area':'area','w-type':'type' };
+  Object.keys(map).forEach(function(id){
+    var e=el(id); if(!e) return;
+    var upd=function(){ wiz.data[map[id]]=e.value; var kh=el('w-key'); if(kh) kh.textContent=wizKey(); };
+    e.addEventListener('input',upd); e.addEventListener('change',upd);
+  });
+}
+function bindWizCopy(){ var b=el('wiz-copy'); if(b) b.onclick=function(){ wizCopy('wiz-prompt',b); }; }
+function wizCopy(id, btn){
+  var txt=el(id).textContent;
+  var done=function(){ var o=btn.getAttribute('data-lbl')||btn.textContent; btn.setAttribute('data-lbl',o); btn.textContent='Copied ✓'; setTimeout(function(){ btn.textContent=o; },1400); };
+  if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(done,function(){ fallbackCopy(txt); done(); }); }
+  else { fallbackCopy(txt); done(); }
+}
+function fallbackCopy(t){ var ta=document.createElement('textarea'); ta.value=t; ta.style.position='fixed'; ta.style.opacity='0'; document.body.appendChild(ta); ta.select(); try{ document.execCommand('copy'); }catch(e){} document.body.removeChild(ta); }
+
 // ---- Modal ----
 function openCard(c){
   if(!c) return;
@@ -942,7 +1232,10 @@ el('modal').addEventListener('click',function(e){ if(e.target===el('modal')) clo
 el('warnclose').onclick=closeWarn;
 el('warngot').onclick=closeWarn;
 el('warnmodal').addEventListener('click',function(e){ if(e.target===el('warnmodal')) closeWarn(); });
-document.addEventListener('keydown',function(e){ if(e.key==='Escape'){ closeModal(); closeWarn(); } });
+// Add-source/add-card wizard modal.
+el('wizclose').onclick=closeWiz;
+el('wizmodal').addEventListener('click',function(e){ if(e.target===el('wizmodal')) closeWiz(); });
+document.addEventListener('keydown',function(e){ if(e.key==='Escape'){ closeModal(); closeWarn(); closeWiz(); } });
 
 // ---- Boot ----
 function render(){
