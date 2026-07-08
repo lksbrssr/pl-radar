@@ -4,18 +4,18 @@
  * Protocol Labs' neurotech program site. Pulls talks, interviews and posts from
  * its WordPress RSS feed (plneuro.xyz/feed/). The feed carries
  * title / link / date / description; its media is YouTube embeds inside the post
- * body rather than a feed image, so cards ship without a header image for now
- * (header images + cross-source dedup are handled separately).
+ * body. We mine the FIRST embedded YouTube id from the body and use its
+ * thumbnail as the header image — which also gives each card a strong dedup
+ * identity (`yt:<id>`), so a talk cross-posted here and on plrd.org collapses to
+ * one card (see src/ingest/identity.ts).
  *
  * These are our own outputs → source_kind "internal". `areaSlug` is inferred
  * from the text but this is a neurotech-focused source, so it will almost always
  * resolve to `neurotech`.
- *
- * NOTE: plneuro cross-posts some talks that also appear via plrd-insights, so
- * this source can produce duplicates of those cards until dedup lands.
  */
 import type { Source, Candidate } from '../types.js'
 import { parseRss, slugify, inferArea, inferType, areaLabel } from '../util.js'
+import { youtubeIds } from '../identity.js'
 
 const FEED_URL = 'https://plneuro.xyz/feed/'
 
@@ -42,6 +42,12 @@ export const plNeuro: Source = {
       // the title says so) rather than the generic Signal.
       const inferred = inferType(item.link, item.title)
       const type = /podcast/i.test(item.title) ? 'Podcast' : inferred === 'Signal' ? 'Talk' : inferred
+      // The primary talk video is the first YouTube embed in the post body; its
+      // thumbnail is the header image AND the dedup identity.
+      const primaryVideo = youtubeIds(item.content ?? item.description)[0]
+      const image = primaryVideo
+        ? `https://i.ytimg.com/vi/${primaryVideo}/maxresdefault.jpg`
+        : item.image
       const candidate: Candidate = {
         key: `plneuro-${slugify(seg)}`,
         title: item.title,
@@ -52,7 +58,7 @@ export const plNeuro: Source = {
         type,
         areaSlug,
         areaLabel: areaLabel(areaSlug),
-        image: item.image,
+        image,
         publishedAt: item.pubDate ? new Date(item.pubDate).toISOString() : undefined,
       }
       return candidate

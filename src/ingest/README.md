@@ -15,8 +15,18 @@ default ingestion only accepts an allowlist of editions (currently **June & July
 - **`protocol-ai-blog`** — announcements & essays from `protocol.ai/blog`
   (`protocol.ai/rss.xml`, header images via RSS `<enclosure>`).
 - **`plneuro`** — talks, interviews & posts from the PL neurotech program
-  (`plneuro.xyz/feed/`). No feed images yet; can cross-post talks that also come
-  via `plrd-insights`, so it may produce duplicates until dedup lands.
+  (`plneuro.xyz/feed/`). Header image + dedup identity come from the first
+  YouTube embed in the post body.
+
+## Dedup (content layer)
+
+Before a candidate becomes a card it is resolved to a canonical **content** by a
+deterministic identity (YouTube video id, else normalized URL — see
+`identity.ts`). Cross-posts of the same asset (e.g. a talk on both plrd.org and
+plneuro.xyz) collapse to **one card**, with every source kept as provenance in
+`content_sources`. The highest-precedence source (`plrd-insights` first) supplies
+the canonical title/url/area; description is best-of (longest), image is the
+primary's. A `↻ dedup` line in the ingest output marks a collapsed cross-post.
 
 ## Run it
 

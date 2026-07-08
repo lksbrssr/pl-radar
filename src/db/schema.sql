@@ -35,6 +35,45 @@ CREATE TABLE IF NOT EXISTS curator_focus (
   PRIMARY KEY (curator_id, area_slug)
 );
 
+-- The canonical underlying asset (a talk, a post) that one or more source items
+-- map to. Cross-posts (same YouTube video / URL from different sources) collapse
+-- to one `content` row via `identity_key`. Cards link up to content; the votable
+-- unit is still the card. See src/ingest/identity.ts + docs/card-presentation.md.
+CREATE TABLE IF NOT EXISTS content (
+  id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+  identity_key        TEXT UNIQUE NOT NULL,        -- 'yt:<videoId>' | 'url:<canonicalUrl>'
+  identity_kind       TEXT NOT NULL,               -- youtube | url
+  canonical_source_key TEXT,                       -- which source currently owns the canonical fields (precedence)
+  canonical_title     TEXT NOT NULL,
+  canonical_url       TEXT NOT NULL,
+  description         TEXT,
+  image               TEXT,
+  area_slug           TEXT,
+  area_label          TEXT,
+  type                TEXT,
+  source              TEXT,                        -- canonical source display name (e.g. 'PL R&D')
+  source_kind         TEXT,                        -- internal | field
+  published_at        TEXT,
+  edition             TEXT,                        -- YYYY-MM
+  created_at          TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Provenance: every raw source item that mapped to a content. Lets us keep all
+-- attributions (plrd.org AND plneuro.xyz both listed) and re-derive canonical
+-- fields. UNIQUE(source_key, source_url) keeps re-ingest idempotent.
+CREATE TABLE IF NOT EXISTS content_sources (
+  id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+  content_id         INTEGER NOT NULL REFERENCES content(id) ON DELETE CASCADE,
+  source_key         TEXT NOT NULL,               -- e.g. 'plrd-insights'
+  source_url         TEXT NOT NULL,
+  source_title       TEXT,
+  source_description TEXT,
+  source_image       TEXT,
+  created_at         TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(source_key, source_url)
+);
+CREATE INDEX IF NOT EXISTS idx_content_sources_content ON content_sources(content_id);
+
 -- Candidate cards to be voted on. Mirrors plrd.org RadarItem + attributes for
 -- the conjoint-style breakdown (type, area, source-kind).
 CREATE TABLE IF NOT EXISTS cards (

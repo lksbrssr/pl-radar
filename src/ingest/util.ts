@@ -12,6 +12,9 @@ export type FeedItem = {
   pubDate?: string
   /** Header image, if the feed carries one (RSS <enclosure>/<media:content>). */
   image?: string
+  /** Full post body (<content:encoded>), when present — lets a source mine
+   *  embedded identifiers (e.g. YouTube ids) for dedup / images. */
+  content?: string
 }
 
 function tag(block: string, name: string): string {
@@ -48,6 +51,7 @@ export function parseRss(xml: string): FeedItem[] {
       description: tag(b, 'description'),
       pubDate: tag(b, 'pubDate') || undefined,
       image: attrUrl(b, 'enclosure') || attrUrl(b, 'media:content'),
+      content: tag(b, 'content:encoded') || undefined,
     })
   }
   return items
