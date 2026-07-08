@@ -69,6 +69,10 @@ export function renderDashboard(): string {
   .nav button:hover{background:var(--gray-50);}
   .nav button.active{background:var(--gray-200);font-weight:600;}
   .nav .ic{width:18px;text-align:center;}
+  .hamb{display:none;margin-left:auto;background:none;border:1px solid var(--line);border-radius:10px;
+    width:40px;height:40px;cursor:pointer;color:var(--ink);font-size:18px;line-height:1;
+    align-items:center;justify-content:center;}
+  .hamb:hover{background:var(--gray-50);}
   .side-foot{margin-top:auto;display:flex;flex-direction:column;gap:8px;}
   .toggle{border:1px solid var(--line);background:var(--white);color:var(--ink);
     border-radius:999px;padding:8px 12px;font-size:12.5px;cursor:pointer;}
@@ -76,9 +80,16 @@ export function renderDashboard(): string {
   .main{flex:1;min-width:0;}
   .wrap{max-width:1000px;margin:0 auto;padding:32px 28px 80px;}
   @media(max-width:720px){
-    .app{flex-direction:column;} .sidebar{width:auto;height:auto;position:static;
-      flex-direction:row;flex-wrap:wrap;align-items:center;border-right:none;border-bottom:1px solid var(--line);}
-    .brand{margin-bottom:0;margin-right:auto;} .nav{flex-direction:row;} .side-foot{margin:0;flex-direction:row;}
+    .app{flex-direction:column;}
+    .sidebar{width:auto;height:auto;position:sticky;top:0;z-index:40;background:var(--white);
+      flex-direction:row;flex-wrap:wrap;align-items:center;gap:0;padding:14px 16px;
+      border-right:none;border-bottom:1px solid var(--line);}
+    .brand{margin-bottom:0;}
+    .hamb{display:flex;}
+    .nav{display:none;flex-direction:column;width:100%;margin-top:12px;gap:4px;}
+    .nav button{padding:12px;font-size:16px;}
+    .side-foot{display:none;width:100%;margin:10px 0 2px;flex-direction:row;gap:10px;align-items:center;}
+    .sidebar.open .nav,.sidebar.open .side-foot{display:flex;}
     .wrap{padding:22px 16px 60px;}
   }
   /* headings */
@@ -328,6 +339,7 @@ export function renderDashboard(): string {
       <span class="dot"></span>
       <div><div class="wm">PL R&amp;D RADAR</div><div class="sub">Crowd curation</div></div>
     </div>
+    <button class="hamb" id="hamb" aria-label="Menu" aria-expanded="false">☰</button>
     <nav class="nav" id="nav">
       <button data-route="radar"><span class="ic">📡</span> Radar</button>
       <button data-route="cards"><span class="ic">🃏</span> Cards</button>
@@ -943,8 +955,15 @@ function render(){
   else if(r==='sources'){ renderSources(); }
   else if(r==='method'){ renderMethodology(); }
 }
+var sidebar = document.querySelector('.sidebar');
+var hamb = el('hamb');
+function closeMenu(){ if(sidebar) sidebar.classList.remove('open'); if(hamb){ hamb.textContent='☰'; hamb.setAttribute('aria-expanded','false'); } }
+if(hamb){ hamb.addEventListener('click', function(){
+  var open = sidebar.classList.toggle('open');
+  hamb.textContent = open?'✕':'☰'; hamb.setAttribute('aria-expanded', open?'true':'false');
+}); }
 document.querySelectorAll('#nav button').forEach(function(b){
-  b.addEventListener('click', function(){ location.hash = b.getAttribute('data-route'); });
+  b.addEventListener('click', function(){ location.hash = b.getAttribute('data-route'); closeMenu(); });
 });
 el('themeToggle').addEventListener('click', function(){
   var d = document.documentElement.classList.toggle('dark');
