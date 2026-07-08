@@ -1128,7 +1128,7 @@ function openMeth(k){
 }
 function closeMeth(){ el('methmodal').classList.remove('open'); }
 
-// ---- Add-card / add-source wizard (AI parse + dedup, with fallbacks) ----
+// ---- Add-card / add-source wizard (bring-your-own-Claude, dedup) ----
 var AREAS_W = [
   {slug:'digital-human-rights',label:'Digital Human Rights'},
   {slug:'economies-governance',label:'Economies & Governance'},
@@ -1136,6 +1136,7 @@ var AREAS_W = [
   {slug:'neurotech',label:'Neurotech'}
 ];
 var TYPES_W = ['Talk','Podcast','Publication','Blog','Signal'];
+var AREA_KEYS_W = AREAS_W.map(function(a){ return a.slug; });
 var repoMeta = {
   repoUrl:'https://github.com/lksbrssr/plrd-radar-curator',
   guideUrl:'https://github.com/lksbrssr/plrd-radar-curator/blob/main/src/ingest/README.md',
@@ -1144,25 +1145,55 @@ var repoMeta = {
 function wizSlug(s){ return String(s||'').toLowerCase().replace(/https?:\/\//,'').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,60); }
 function repoShort(){ return repoMeta.repoUrl.replace('https://github.com/',''); }
 
-// Whether the submit surface is on (SUBMIT_KEY set) and whether an LLM is wired.
-var SUBMIT = { checked:false, enabled:false, ai:false };
+// Is submission turned on at all (SUBMIT_DISABLED flips it off).
+var SUBMIT = { checked:false, enabled:true };
 function loadSubmitStatus(){
-  return getJSON('/api/submit/status').then(function(s){ SUBMIT={checked:true,enabled:!!s.enabled,ai:!!s.ai}; })
-    .catch(function(){ SUBMIT={checked:true,enabled:false,ai:false}; });
-}
-// The passphrase that lets this browser spend AI tokens (stored locally only).
-var submitKey=''; try{ submitKey=localStorage.getItem('radar-submitkey')||''; }catch(e){}
-function saveSubmitKey(k){ submitKey=k; try{ if(k) localStorage.setItem('radar-submitkey',k); else localStorage.removeItem('radar-submitkey'); }catch(e){} }
-function authHeaders(){ var h={'Content-Type':'application/json'}; if(submitKey) h['x-submit-key']=submitKey; return h; }
-function submitPost(path, body){
-  return fetch(path,{method:'POST',headers:authHeaders(),body:JSON.stringify(body||{})}).then(function(r){
-    return r.json().then(function(j){ return {status:r.status, body:j}; }, function(){ return {status:r.status, body:{}}; });
-  });
+  return getJSON('/api/submit/status').then(function(s){ SUBMIT={checked:true,enabled:!!s.enabled}; })
+    .catch(function(){ SUBMIT={checked:true,enabled:true}; });
 }
 
-var wiz = { path:null, view:null, data:{}, dedup:null, sample:[], inPool:0, result:null, err:'' };
+// The user's own Claude connection: {key, model}, stored ONLY in this browser.
+// Card drafting calls Anthropic directly from here — the key never hits our server.
+var ai=null; try{ ai=JSON.parse(localStorage.getItem('radar-claude')||'null'); }catch(e){}
+function saveAi(v){ ai=v; try{ if(v) localStorage.setItem('radar-claude', JSON.stringify(v)); else localStorage.removeItem('radar-claude'); }catch(e){} }
+function aiOn(){ return !!(ai&&ai.key); }
+function defaultModel(){ return (ai&&ai.model)||'claude-3-5-haiku-latest'; }
+
+function post(path, body){
+  return fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})})
+    .then(function(r){ return r.json().then(function(j){ return {status:r.status, body:j}; }, function(){ return {status:r.status, body:{}}; }); });
+}
+function extractJson(t){
+  var f=String(t||'').match(/\x60\x60\x60(?:json)?\s*([\s\S]*?)\x60\x60\x60/i); var b=f?f[1]:String(t||'');
+  var s=b.indexOf('{'), e=b.lastIndexOf('}'); if(s<0||e<0||e<s) throw new Error('no json'); return JSON.parse(b.slice(s,e+1));
+}
+// Direct browser -> Anthropic call with the user's key (their tokens).
+function callClaude(system, user){
+  return fetch('https://api.anthropic.com/v1/messages',{
+    method:'POST',
+    headers:{'content-type':'application/json','x-api-key':ai.key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+    body:JSON.stringify({model:defaultModel(),max_tokens:1024,system:system,messages:[{role:'user',content:user}]})
+  }).then(function(r){
+    if(!r.ok) return r.text().then(function(t){ var e=new Error('Claude '+r.status); e.status=r.status; e.detail=t; throw e; });
+    return r.json();
+  }).then(function(d){ return (d.content||[]).map(function(c){ return c.text||''; }).join(''); });
+}
+var CARD_SYSTEM='You are an editor for the Protocol Labs R&D Radar, a monthly digest of the strongest signals across four focus areas: digital-human-rights (privacy, encryption, surveillance, rights), economies-governance (funding, mechanisms, markets, governance, public goods), ai-robotics (AI models, agents, robotics, compute), neurotech (brain, BCI, neuroscience). Given ONE web page, return ONLY a JSON object: {"title": tight headline <=90 chars, "description": 1-2 sentences <=240 chars on why it matters, "areaSlug": one of digital-human-rights|economies-governance|ai-robotics|neurotech, "type": one of Talk|Podcast|Publication|Blog|Signal, "angle": one of counterintuitive|big-if-true|early-signal|provocative|funny|clarifying|proof, "source": who to credit <=40 chars, "rationale": one short line}. Never invent facts. Be honest about the angle; do not manufacture hype. Signal is the default type.';
+var SOURCE_SYSTEM='You name a content source for the Protocol Labs R&D Radar. Given a feed title and recent item titles, return ONLY JSON: {"name": <=40 chars, "description": one line <=120 chars describing what this feed brings in}.';
+function cardUserPrompt(m){
+  return 'URL: '+m.finalUrl+'\n'+(m.siteName?'Site: '+m.siteName+'\n':'')+'Page title: '+(m.title||'(none)')+'\n'+(m.description?'Meta description: '+m.description+'\n':'')+'\nPage text (truncated):\n'+(m.text||'(no readable body text)');
+}
+function sourceUserPrompt(d){
+  return 'Feed name: '+(d.name||'(none)')+'\nRecent items:\n'+(d.sample||[]).map(function(s){ return '- '+s.title; }).join('\n');
+}
+function clampArea(s){ return AREA_KEYS_W.indexOf(s)>=0?s:''; }
+function clampType(t){ return TYPES_W.indexOf(t)>=0?t:''; }
+function angleKeys(){ return ((state.overview&&state.overview.lenses.angles)||[]).map(function(a){ return a.key; }); }
+function clampAngle(a){ return angleKeys().indexOf(a)>=0?a:''; }
+
+var wiz = { path:null, view:null, connect:false, data:{}, meta:{}, dedup:null, sample:[], inPool:0, result:null, err:'' };
 function openWiz(){
-  wiz = { path:null, view:null, dedup:null, sample:[], inPool:0, result:null, err:'', data:{
+  wiz = { path:null, view:null, connect:false, dedup:null, sample:[], inPool:0, result:null, err:'', meta:{}, data:{
     title:'', href:'', description:'', area:'ai-robotics', type:'Signal', source:'', angle:'', image:null, rationale:'',
     name:'', feedUrl:'', homepage:'', srcDesc:'', srcArea:''
   } };
@@ -1171,7 +1202,6 @@ function openWiz(){
   if(!SUBMIT.checked){ loadSubmitStatus().then(renderWiz); }
 }
 function closeWiz(){ el('wizmodal').classList.remove('open'); }
-
 function setWiz(h,sub,body,foot){
   el('wiz-steps').style.display='none'; el('wiz-steps').innerHTML='';
   el('wiz-h').textContent=h; el('wiz-sub').textContent=sub;
@@ -1182,42 +1212,54 @@ function errHtml(){ return wiz.err?'<div class="errbox">'+esc(wiz.err)+'</div>':
 
 function renderWiz(){
   if(!SUBMIT.checked){ setWiz('Add to the Radar','Loading\u2026','<div class="parsing"><span class="spin"></span>Getting things ready\u2026</div>',''); return; }
-  if(SUBMIT.enabled && !submitKey){ renderUnlock(); return; }
+  if(wiz.connect){ renderConnect(); return; }
   if(wiz.path===null){ renderWizChoice(); return; }
   if(wiz.path==='card'){ renderCard(); return; }
   renderSource();
 }
 
-function renderUnlock(){
-  setWiz('Unlock submissions','A passphrase is needed to use the AI',
-    '<p class="subnote">Pasting a URL for the AI to read spends API tokens, so this instance is passphrase-gated. Enter the passphrase your admin shared \u2014 it stays in this browser only.</p>'+
-    '<div class="field"><label>Passphrase</label><input id="w-key" type="password" placeholder="\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"></div>'+
+// ---- Connect Claude (bring your own key) ----
+function renderConnect(){
+  setWiz('Connect Claude','Your own key \u2014 your tokens, in your browser',
+    '<p class="subnote">Paste an Anthropic API key. It\'s stored only in this browser and sent <strong>straight to Anthropic</strong>, never to our server. Drafting a card costs you a fraction of a cent.</p>'+
+    '<div class="field"><label>Anthropic API key</label><input id="w-key" type="password" placeholder="sk-ant-\u2026" value="'+esc(ai&&ai.key?ai.key:'')+'"></div>'+
+    '<p class="subnote"><a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">Get a key \u2192</a> \u2014 free to create; you only pay per use. No key? You can still fill cards in manually.</p>'+
     errHtml(),
-    '<span class="muted" style="font-size:12.5px">Don\'t have one? Ask a maintainer.</span><button class="btn" id="w-unlock">Unlock \u2192</button>');
-  el('w-key').addEventListener('keydown',function(e){ if(e.key==='Enter') el('w-unlock').click(); });
-  el('w-unlock').onclick=function(){ var k=el('w-key').value.trim(); if(!k) return; saveSubmitKey(k); wiz.err=''; renderWiz(); };
+    '<button class="btn-ghost" id="w-back">\u2190 Back</button><button class="btn" id="w-connect">Connect \u2192</button>');
+  el('w-key').addEventListener('keydown',function(e){ if(e.key==='Enter') el('w-connect').click(); });
+  el('w-back').onclick=function(){ wiz.connect=false; wiz.err=''; renderWiz(); };
+  el('w-connect').onclick=function(){
+    var k=el('w-key').value.trim(); if(!k) return;
+    var btn=el('w-connect'); btn.disabled=true; btn.textContent='Checking\u2026';
+    var prev=ai; ai={key:k,model:defaultModel()};
+    callClaude('You are a helpful assistant.','Reply with just: OK').then(function(){
+      saveAi({key:k,model:defaultModel()}); wiz.err=''; wiz.connect=false; renderWiz();
+    }, function(e){
+      ai=prev;
+      wiz.err=(e&&e.status===401)?'That key was rejected. Double-check it and try again.'
+        :(e&&e.status===403)?'That key isn\'t allowed to call the API.'
+        :'Could not reach Claude with that key (check the key and your connection).';
+      renderWiz();
+    });
+  };
 }
 
 function renderWizChoice(){
-  var canAI=SUBMIT.enabled, body;
-  if(canAI){
-    body='<p>Add one item right now, or wire up a feed the Radar re-checks daily. Paste a link and AI does the rest \u2014 you just review before it\'s added.</p>'+
-      '<div class="pathgrid">'+
-      '<button class="pathcard" data-path="card"><span class="em">\ud83c\udccf</span><h4>Add a card</h4><p>Paste any URL \u2014 article, Reddit or X post, paper, video. AI turns it into a card you review, then it enters this month\'s pool.</p></button>'+
-      '<button class="pathcard" data-path="source"><span class="em">\ud83d\udef0\ufe0f</span><h4>Recurring source</h4><p>Paste a site or feed URL. We find its feed and re-check it about once a day for fresh candidates.</p></button>'+
-      '</div>';
-  } else {
-    body='<p>AI submission isn\'t enabled on this instance \u2014 but you can still contribute with a one-file pull request via your own coding agent.</p>'+
-      '<div class="pathgrid">'+
-      '<button class="pathcard" data-path="card"><span class="em">\ud83c\udccf</span><h4>Single card</h4><p>Add one talk, paper or post via a small PR.</p></button>'+
-      '<button class="pathcard" data-path="source"><span class="em">\ud83d\udef0\ufe0f</span><h4>Recurring source</h4><p>Add a feed via a one-file PR.</p></button>'+
-      '</div>';
-  }
-  setWiz('Add to the Radar','Two ways to feed the pool',body,
-    '<span class="muted" style="font-size:12.5px">'+(canAI?'Everything is reviewed before it\'s added.':'You\'ll need a GitHub account and a coding agent.')+'</span>');
+  var conn = aiOn()
+    ? '<div class="calloutbox">\u2713 <strong>Claude connected.</strong> Paste a link and it drafts the card for you. <button class="altlink" id="w-disc">Disconnect</button></div>'
+    : '<div class="calloutbox"><button class="altlink" id="w-conn">Connect your Claude key</button> to auto-draft cards from any link (your key, your tokens \u2014 it never touches our server). Optional \u2014 you can always fill cards in by hand.</div>';
+  setWiz('Add to the Radar','Two ways to feed the pool',
+    '<p>Add one item now, or wire up a feed the Radar re-checks daily.</p>'+conn+
+    '<div class="pathgrid">'+
+    '<button class="pathcard" data-path="card"><span class="em">\ud83c\udccf</span><h4>Add a card</h4><p>Paste any URL \u2014 article, Reddit/X post, paper, video. It becomes a card you review, then enters this month\'s pool.</p></button>'+
+    '<button class="pathcard" data-path="source"><span class="em">\ud83d\udef0\ufe0f</span><h4>Recurring source</h4><p>Paste a site or feed URL. We find its feed and re-check it about once a day for fresh candidates.</p></button>'+
+    '</div>',
+    '<span class="muted" style="font-size:12.5px">Everything is reviewed before it\'s added \u2014 and duplicates are caught automatically.</span>');
   Array.prototype.forEach.call(el('wiz-body').querySelectorAll('.pathcard'),function(c){
     c.onclick=function(){ wiz.path=c.getAttribute('data-path'); wiz.view=null; wiz.err=''; renderWiz(); };
   });
+  var cc=el('w-conn'); if(cc) cc.onclick=function(){ wiz.connect=true; wiz.err=''; renderWiz(); };
+  var dc=el('w-disc'); if(dc) dc.onclick=function(){ saveAi(null); renderWiz(); };
 }
 
 // ---- shared helpers ----
@@ -1264,13 +1306,16 @@ function renderCard(){
   if(v==='success'){ renderCardSuccess(); return; }
   if(v==='manual'){ renderCardManual(); return; }
   if(v==='agent'){ renderAgentCard(); return; }
-  if(!SUBMIT.ai){ renderCardManual(); return; }
   renderCardInput();
 }
 function renderCardInput(){
-  setWiz('Add a card','Paste a URL, AI drafts the card',
-    '<p class="subnote">Paste a link to anything \u2014 a news article, a Reddit or X post, a paper, a video. AI reads it and drafts a card; you review before it\'s added.</p>'+
-    '<div class="urlrow"><input id="w-url" placeholder="https://\u2026" value="'+esc(wiz.data.href)+'"><button class="btn" id="w-parse">Parse \u2192</button></div>'+
+  var connected=aiOn();
+  var conn = connected
+    ? '<p class="subnote">\u2713 Claude connected \u2014 paste a link and it drafts the card. <button class="altlink" id="w-disc">Disconnect</button></p>'
+    : '<p class="subnote"><button class="altlink" id="w-conn">Connect Claude</button> to auto-draft from any link \u2014 or just fetch the page and fill it in.</p>';
+  setWiz('Add a card','Paste a URL',
+    '<p class="subnote">Paste a link to anything \u2014 a news article, a Reddit or X post, a paper, a video.</p>'+conn+
+    '<div class="urlrow"><input id="w-url" placeholder="https://\u2026" value="'+esc(wiz.data.href)+'"><button class="btn" id="w-parse">'+(connected?'Draft with Claude \u2192':'Fetch details \u2192')+'</button></div>'+
     errHtml()+
     '<button class="altlink" id="w-manual">Or enter the details manually \u2192</button>',
     '<button class="btn-ghost" id="w-back">\u2190 Back</button><span></span>');
@@ -1278,32 +1323,60 @@ function renderCardInput(){
   el('w-url').addEventListener('keydown',function(e){ if(e.key==='Enter') doParseCard(); });
   el('w-parse').onclick=doParseCard;
   el('w-manual').onclick=function(){ wiz.data.href=el('w-url').value.trim(); wiz.view='manual'; wiz.err=''; renderWiz(); };
+  var c=el('w-conn'); if(c) c.onclick=function(){ wiz.connect=true; wiz.err=''; renderWiz(); };
+  var dc=el('w-disc'); if(dc) dc.onclick=function(){ saveAi(null); renderWiz(); };
+}
+function setDraftFromExtract(j){
+  var d=j.draft||{};
+  wiz.meta=j.meta||{};
+  wiz.data.title=d.title||''; wiz.data.description=d.description||''; wiz.data.href=d.href||wiz.data.href;
+  wiz.data.area=d.areaSlug||'ai-robotics'; wiz.data.type=d.type||'Signal'; wiz.data.source=d.source||''; wiz.data.image=(d.image!=null?d.image:null); wiz.data.angle=''; wiz.data.rationale='';
+}
+function applyAiDraft(txt){
+  var o=extractJson(txt), d=wiz.data;
+  if(o.title) d.title=String(o.title).slice(0,140);
+  if(o.description) d.description=String(o.description).slice(0,400);
+  var a=clampArea(o.areaSlug); if(a) d.area=a;
+  var t=clampType(o.type); if(t) d.type=t;
+  var g=clampAngle(o.angle); if(g) d.angle=g;
+  if(o.source) d.source=String(o.source).slice(0,60);
+  if(o.rationale) d.rationale=String(o.rationale).slice(0,200);
+}
+function recheckDedupThenReview(){
+  post('/api/submit/dedup',{href:wiz.data.href,title:wiz.data.title,image:wiz.data.image}).then(function(r){
+    wiz.dedup=(r.body&&r.body.duplicate)||null; wiz.view='review'; renderWiz();
+  },function(){ wiz.view='review'; renderWiz(); });
 }
 function doParseCard(){
   var url=(el('w-url')?el('w-url').value:wiz.data.href).trim();
   if(!/^https?:\/\//i.test(url)){ wiz.err='Enter a full URL that starts with http.'; renderWiz(); return; }
   wiz.data.href=url; wiz.err='';
-  setWiz('Reading the page\u2026','AI is drafting your card','<div class="parsing"><span class="spin"></span>Fetching and analyzing '+esc(url.slice(0,64))+'\u2026</div>','');
-  submitPost('/api/submit/parse',{url:url}).then(function(r){
-    if(r.status===401){ saveSubmitKey(''); wiz.err='That passphrase was rejected \u2014 enter it again.'; renderWiz(); return; }
+  var withAI=aiOn();
+  setWiz(withAI?'Reading the page\u2026':'Fetching details\u2026', withAI?'Claude is drafting your card':'Reading the page',
+    '<div class="parsing"><span class="spin"></span>'+(withAI?'Fetching + drafting from ':'Fetching ')+esc(url.slice(0,60))+'\u2026</div>','');
+  post('/api/submit/extract',{url:url}).then(function(r){
     var j=r.body||{};
-    if(j.ok){
-      var d=j.draft;
-      wiz.data.title=d.title||''; wiz.data.description=d.description||''; wiz.data.href=d.href||url;
-      wiz.data.area=d.areaSlug||'ai-robotics'; wiz.data.type=d.type||'Signal'; wiz.data.source=d.source||'';
-      wiz.data.angle=d.angle||''; wiz.data.image=d.image||null; wiz.data.rationale=d.rationale||'';
-      wiz.dedup=j.duplicate||null; wiz.view='review'; renderWiz(); return;
+    if(!j.ok){
+      if(j.reason==='bad-url'){ wiz.err='That doesn\'t look like a valid URL.'; wiz.view=null; renderWiz(); return; }
+      if(j.reason==='rate-limited'){ wiz.err='Too many requests \u2014 give it a minute.'; wiz.view=null; renderWiz(); return; }
+      wiz.err=(j.message||'Couldn\'t read that page.')+' Add the details manually below.'; wiz.view='manual'; renderWiz(); return;
     }
-    if(j.reason==='ai-unavailable'){ wiz.err=''; wiz.view='manual'; renderWiz(); return; }
-    if(j.reason==='fetch'||j.reason==='parse'){ wiz.err=(j.message||'Couldn\'t read that page.')+' Add the details manually below.'; wiz.view='manual'; renderWiz(); return; }
-    if(j.reason==='bad-url'){ wiz.err='That doesn\'t look like a valid URL.'; wiz.view=null; renderWiz(); return; }
-    wiz.err='Something went wrong. You can add the details manually.'; wiz.view='manual'; renderWiz();
+    setDraftFromExtract(j); wiz.dedup=j.duplicate||null;
+    if(!withAI){ wiz.view='manual'; renderWiz(); return; }
+    callClaude(CARD_SYSTEM, cardUserPrompt(j.meta||{})).then(function(txt){
+      try{ applyAiDraft(txt); }catch(e){}
+      recheckDedupThenReview();
+    }, function(e){
+      if(e&&e.status===401){ saveAi(null); wiz.err='Your Claude key was rejected \u2014 reconnect, or edit the scraped draft below.'; }
+      else { wiz.err='Claude couldn\'t draft it \u2014 here\'s what we scraped; edit and add.'; }
+      wiz.view='manual'; renderWiz();
+    });
   }).catch(function(){ wiz.err='Network error. Add the details manually below.'; wiz.view='manual'; renderWiz(); });
 }
 function renderCardReview(){
   var d=wiz.data, g=area(d.area);
   var media = d.image ? '<div class="draftprev"><div class="dp-media" style="background:'+g.g+'"><img src="'+esc(d.image)+'" onerror="this.parentNode.parentNode.style.display=\'none\'"><span class="dp-area" style="background:'+g.c+'">'+esc(areaName(d.area))+'</span></div></div>' : '';
-  setWiz('Review your card','AI filled this in \u2014 tweak anything',
+  setWiz('Review your card', aiOn()?'Claude drafted this \u2014 tweak anything':'From the page \u2014 tweak anything',
     (wiz.dedup?dedupBanner(wiz.dedup):'')+errHtml()+
     (d.rationale?'<p class="rationale">'+esc(d.rationale)+'</p>':'')+
     media+cardFormFields(),
@@ -1313,24 +1386,26 @@ function renderCardReview(){
   bindDedupOpens();
 }
 function renderCardManual(){
-  setWiz('Add a card manually','You fill in the details',
+  var connectHint = aiOn() ? '' : '<p class="subnote"><button class="altlink" id="w-conn">Connect Claude</button> to auto-draft next time.</p>';
+  setWiz('Add a card','Fill in the details',
     errHtml()+
-    '<p class="subnote">Fill in as much as you can and add it straight to the pool \u2014 or hand it to your own coding agent to open a pull request.</p>'+
+    '<p class="subnote">Fill in as much as you can and add it straight to the pool \u2014 or hand it to your own coding agent to open a pull request.</p>'+connectHint+
     cardFormFields(),
     '<button class="altlink" id="w-agent">Prepare a PR for my agent \u2192</button><button class="btn" id="w-add">Add to Radar \u2192</button>');
   el('w-add').onclick=doSubmitCard;
   el('w-agent').onclick=function(){ readCardForm(); wiz.view='agent'; renderWiz(); };
+  var c=el('w-conn'); if(c) c.onclick=function(){ readCardForm(); wiz.connect=true; renderWiz(); };
 }
 function doSubmitCard(){
   readCardForm();
   var d=wiz.data;
   if(!d.title || !/^https?:\/\//i.test(d.href) || !d.area){ wiz.err='A title, a valid URL and a focus area are required.'; renderWiz(); return; }
   wiz.err=''; var ab=el('w-add'); if(ab){ ab.disabled=true; ab.textContent='Adding\u2026'; }
-  submitPost('/api/submit/card',{title:d.title,href:d.href,description:d.description,areaSlug:d.area,type:d.type,source:d.source,angle:d.angle,image:d.image}).then(function(r){
-    if(r.status===401){ saveSubmitKey(''); wiz.err='Passphrase rejected \u2014 re-enter it.'; renderWiz(); return; }
+  post('/api/submit/card',{title:d.title,href:d.href,description:d.description,areaSlug:d.area,type:d.type,source:d.source,angle:d.angle,image:d.image}).then(function(r){
     var j=r.body||{};
     if(j.ok){ wiz.result=j.card; wiz.view='success'; renderWiz(); return; }
     if(j.reason==='duplicate'){ wiz.dedup=j.duplicate; wiz.view='duplicate'; renderWiz(); return; }
+    if(j.reason==='rate-limited'){ wiz.err='Too many requests \u2014 give it a minute.'; renderWiz(); return; }
     if(j.reason==='incomplete'){ wiz.err='A title, URL and focus area are required.'; renderWiz(); return; }
     wiz.err='Could not add the card. Please try again.'; renderWiz();
   }).catch(function(){ wiz.err='Network error while adding the card.'; renderWiz(); });
@@ -1392,19 +1467,25 @@ function doParseSource(){
   var url=el('w-url').value.trim();
   if(!/^https?:\/\//i.test(url)){ wiz.err='Enter a full URL that starts with http.'; renderWiz(); return; }
   wiz.data.feedUrl=url; wiz.err='';
-  setWiz('Finding the feed\u2026','Reading the site','<div class="parsing"><span class="spin"></span>Looking for a feed at '+esc(url.slice(0,64))+'\u2026</div>','');
-  submitPost('/api/submit/source/parse',{url:url}).then(function(r){
-    if(r.status===401){ saveSubmitKey(''); wiz.err='Passphrase rejected \u2014 re-enter it.'; renderWiz(); return; }
+  setWiz('Finding the feed\u2026','Reading the site','<div class="parsing"><span class="spin"></span>Looking for a feed at '+esc(url.slice(0,60))+'\u2026</div>','');
+  post('/api/submit/source/parse',{url:url}).then(function(r){
     var j=r.body||{};
-    if(j.ok){
-      var d=j.draft;
-      wiz.data.name=d.name||''; wiz.data.feedUrl=d.feedUrl||url; wiz.data.homepage=d.homepage||''; wiz.data.srcDesc=d.description||''; wiz.data.srcArea='';
-      wiz.sample=d.sample||[]; wiz.dedup=j.duplicate||null; wiz.inPool=j.samplesAlreadyInPool||0;
-      wiz.view='review'; renderWiz(); return;
+    if(!j.ok){
+      if(j.reason==='no-feed'){ wiz.err=j.message||'No RSS/Atom feed found at that URL.'; }
+      else if(j.reason==='bad-url'){ wiz.err='That doesn\'t look like a valid URL.'; }
+      else if(j.reason==='rate-limited'){ wiz.err='Too many requests \u2014 give it a minute.'; }
+      else wiz.err=j.message||'Could not read that URL.';
+      wiz.view=null; renderWiz(); return;
     }
-    if(j.reason==='no-feed'){ wiz.err=j.message||'No RSS/Atom feed found at that URL.'; wiz.view=null; renderWiz(); return; }
-    if(j.reason==='bad-url'){ wiz.err='That doesn\'t look like a valid URL.'; wiz.view=null; renderWiz(); return; }
-    wiz.err=j.message||'Could not read that URL.'; wiz.view=null; renderWiz();
+    var d=j.draft;
+    wiz.data.name=d.name||''; wiz.data.feedUrl=d.feedUrl||url; wiz.data.homepage=d.homepage||''; wiz.data.srcDesc=d.description||''; wiz.data.srcArea='';
+    wiz.sample=d.sample||[]; wiz.dedup=j.duplicate||null; wiz.inPool=j.samplesAlreadyInPool||0;
+    if(aiOn()){
+      callClaude(SOURCE_SYSTEM, sourceUserPrompt(d)).then(function(txt){
+        try{ var o=extractJson(txt); if(o.name) wiz.data.name=String(o.name).slice(0,60); if(o.description) wiz.data.srcDesc=String(o.description).slice(0,140); }catch(e){}
+        wiz.view='review'; renderWiz();
+      }, function(){ wiz.view='review'; renderWiz(); });
+    } else { wiz.view='review'; renderWiz(); }
   }).catch(function(){ wiz.err='Network error.'; wiz.view=null; renderWiz(); });
 }
 function renderSourceReview(){
@@ -1433,11 +1514,11 @@ function doSubmitSource(){
   if(el('s-area')) d.srcArea=el('s-area').value;
   if(!d.name || !/^https?:\/\//i.test(d.feedUrl)){ wiz.err='A name and a valid feed URL are required.'; renderWiz(); return; }
   wiz.err=''; var ab=el('w-add'); if(ab){ ab.disabled=true; ab.textContent='Adding\u2026'; }
-  submitPost('/api/submit/source',{name:d.name,description:d.srcDesc,feedUrl:d.feedUrl,homepage:d.homepage,areaSlug:d.srcArea}).then(function(r){
-    if(r.status===401){ saveSubmitKey(''); wiz.err='Passphrase rejected \u2014 re-enter it.'; renderWiz(); return; }
+  post('/api/submit/source',{name:d.name,description:d.srcDesc,feedUrl:d.feedUrl,homepage:d.homepage,areaSlug:d.srcArea}).then(function(r){
     var j=r.body||{};
     if(j.ok){ wiz.result=j.source; wiz.view='success'; renderWiz(); return; }
     if(j.reason==='duplicate'){ wiz.dedup=j.duplicate; renderWiz(); return; }
+    if(j.reason==='rate-limited'){ wiz.err='Too many requests \u2014 give it a minute.'; renderWiz(); return; }
     wiz.err='Could not add the source. Please try again.'; renderWiz();
   }).catch(function(){ wiz.err='Network error while adding the source.'; renderWiz(); });
 }

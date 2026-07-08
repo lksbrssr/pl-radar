@@ -1,10 +1,15 @@
 /**
- * Fetch a pasted URL and pull out the bits an LLM needs to write a card:
- * the title, description/OG tags, a header image, and a chunk of readable body
- * text. Dependency-free (global `fetch` + regex) and defensive — a page that
- * blocks bots or returns junk just yields whatever we could scrape, and the
- * caller decides whether that's enough.
+ * Fetch a pasted URL and pull out the bits needed to draft a card: the title,
+ * description/OG tags, a header image, and a chunk of readable body text.
+ * Dependency-free (global `fetch` + regex) and defensive — a page that blocks
+ * bots or returns junk just yields whatever we could scrape.
+ *
+ * Because this fetches an arbitrary user-supplied URL server-side, every request
+ * goes through `safeFetch`, which blocks private/loopback/link-local hosts (SSRF
+ * guard) and re-checks each redirect hop.
  */
+import dns from 'node:dns/promises'
+import net from 'node:net'
 
 export type PageMeta = {
   url: string
@@ -64,19 +69,94 @@ export class FetchFailedError extends Error {
   }
 }
 
+/** True for IPs we must never let the server connect to (SSRF guard). */
+function isBlockedIp(ip: string): boolean {
+  const v = net.isIP(ip)
+  if (v === 4) {
+    const p = ip.split('.').map(Number)
+    if (p[0] === 10 || p[0] === 127 || p[0] === 0) return true
+    if (p[0] === 169 && p[1] === 254) return true // link-local + cloud metadata
+    if (p[0] === 172 && p[1]! >= 16 && p[1]! <= 31) return true
+    if (p[0] === 192 && p[1] === 168) return true
+    if (p[0] === 100 && p[1]! >= 64 && p[1]! <= 127) return true // CGNAT
+    return false
+  }
+  if (v === 6) {
+    const lo = ip.toLowerCase()
+    if (lo === '::1' || lo === '::') return true
+    if (lo.startsWith('fe80') || lo.startsWith('fc') || lo.startsWith('fd')) return true
+    const m = lo.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/) // IPv4-mapped
+    if (m) return isBlockedIp(m[1]!)
+    return false
+  }
+  return false
+}
+
+async function assertPublicHost(hostname: string): Promise<void> {
+  const h = hostname.toLowerCase()
+  if (h === 'localhost' || h.endsWith('.local') || h.endsWith('.internal')) {
+    throw new FetchFailedError('That host is not allowed.')
+  }
+  if (net.isIP(h)) {
+    if (isBlockedIp(h)) throw new FetchFailedError('That address is not allowed.')
+    return
+  }
+  let addrs: { address: string }[]
+  try {
+    addrs = await dns.lookup(h, { all: true })
+  } catch {
+    throw new FetchFailedError('Could not resolve that host.')
+  }
+  if (addrs.some((a) => isBlockedIp(a.address))) {
+    throw new FetchFailedError('That host resolves to a blocked address.')
+  }
+}
+
+/**
+ * SSRF-safe fetch: validate the URL scheme + host (no private/loopback/metadata
+ * targets) before every hop, following redirects manually so a redirect can't
+ * bounce us into the internal network. Throws `FetchFailedError` on a bad URL,
+ * blocked host, timeout, or too many redirects.
+ */
+export async function safeFetch(url: string, init?: RequestInit): Promise<Response> {
+  let current = url
+  for (let hop = 0; hop < 5; hop++) {
+    let u: URL
+    try {
+      u = new URL(current)
+    } catch {
+      throw new FetchFailedError('That is not a valid URL.')
+    }
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') {
+      throw new FetchFailedError('Only http and https URLs are supported.')
+    }
+    await assertPublicHost(u.hostname)
+    let res: Response
+    try {
+      res = await fetch(current, {
+        ...init,
+        redirect: 'manual',
+        signal: AbortSignal.timeout(15_000),
+      })
+    } catch (err) {
+      throw new FetchFailedError(`Could not reach the URL (${String(err)}).`)
+    }
+    const loc = res.headers.get('location')
+    if (res.status >= 300 && res.status < 400 && loc) {
+      current = new URL(loc, current).toString()
+      continue
+    }
+    return res
+  }
+  throw new FetchFailedError('Too many redirects.')
+}
+
 /** Fetch + extract. Throws `FetchFailedError` if the URL is unreachable or the
  *  response clearly isn't an HTML/text page we can read. */
 export async function fetchPageMeta(url: string): Promise<PageMeta> {
-  let res: Response
-  try {
-    res = await fetch(url, {
-      headers: { 'user-agent': UA, accept: 'text/html,application/xhtml+xml' },
-      redirect: 'follow',
-      signal: AbortSignal.timeout(15_000),
-    })
-  } catch (err) {
-    throw new FetchFailedError(`Could not reach the URL (${String(err)})`)
-  }
+  const res = await safeFetch(url, {
+    headers: { 'user-agent': UA, accept: 'text/html,application/xhtml+xml' },
+  })
   if (!res.ok) {
     throw new FetchFailedError(`The site returned HTTP ${res.status}.`)
   }
