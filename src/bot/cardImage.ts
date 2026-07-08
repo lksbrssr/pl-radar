@@ -35,11 +35,14 @@ const AREA_GRADIENT: Record<string, { from: string; via: string; to: string }> =
   default: { from: '#0d0f13', via: '#1d2b5c', to: '#1982F4' },
 }
 
-const W = 800
-const PANEL_H = 430
-const VS_H = 92
-const H = PANEL_H * 2 + VS_H
-const PAD = 20
+// Side-by-side layout (🅰 left, 🅱 right) so the panels line up with the
+// left/right vote buttons.
+const W = 840
+const H = 720
+const PAD = 18
+const GAP = 60 // middle channel that holds the VS badge
+const PANEL_W = (W - PAD * 2 - GAP) / 2
+const PANEL_H = H - PAD * 2
 const RADIUS = 26
 
 // --- Remote cover image cache (fetched once, reused across rounds) ----------
@@ -125,14 +128,13 @@ function drawPanel(
   ctx: SKRSContext2D,
   card: Card,
   cover: Image | null,
+  x: number,
   y: number,
+  w: number,
+  h: number,
   slot: 'A' | 'B',
   reigning: boolean,
 ) {
-  const x = PAD
-  const w = W - PAD * 2
-  const h = PANEL_H - PAD
-
   ctx.save()
   roundedRectPath(ctx, x, y, w, h, RADIUS)
   ctx.clip()
@@ -154,7 +156,7 @@ function drawPanel(
   }
 
   // Bottom scrim for text legibility.
-  const scrim = ctx.createLinearGradient(0, y + h * 0.35, 0, y + h)
+  const scrim = ctx.createLinearGradient(0, y + h * 0.45, 0, y + h)
   scrim.addColorStop(0, 'rgba(0,0,0,0)')
   scrim.addColorStop(1, 'rgba(0,0,0,0.82)')
   ctx.fillStyle = scrim
@@ -192,8 +194,9 @@ function drawPanel(
   }
 
   // --- Text block, anchored to the BOTTOM so it never clips. ---
-  const tx = x + 26
-  const lineH = 40
+  const tx = x + 24
+  const textW = w - 48
+  const lineH = 34
 
   // Source line (only "Field signal" prefix when the card is external).
   const sourceText = card.source
@@ -202,17 +205,18 @@ function drawPanel(
       : card.source
     : ''
 
-  // Measure the title first so we know how tall the block is.
-  ctx.font = '700 34px Inter'
-  const titleLines = wrapText(ctx, card.title, w - 52, 2)
+  // Measure the title first so we know how tall the block is. Narrow columns
+  // wrap more, so allow up to 3 lines.
+  ctx.font = '700 29px Inter'
+  const titleLines = wrapText(ctx, card.title, textW, 3)
 
-  const sourceBaseline = y + h - 26
-  const titleBottomBaseline = sourceText ? sourceBaseline - 34 : sourceBaseline
+  const sourceBaseline = y + h - 24
+  const titleBottomBaseline = sourceText ? sourceBaseline - 32 : sourceBaseline
   const firstTitleBaseline = titleBottomBaseline - (titleLines.length - 1) * lineH
-  const areaBaseline = firstTitleBaseline - lineH - 4
+  const areaBaseline = firstTitleBaseline - lineH - 6
 
   // Area + type caption.
-  ctx.font = '700 18px Inter'
+  ctx.font = '700 16px Inter'
   ctx.fillStyle = 'rgba(255,255,255,0.9)'
   ctx.fillText(
     `${card.area_label.toUpperCase()}  ·  ${card.type.toUpperCase()}`,
@@ -221,7 +225,7 @@ function drawPanel(
   )
 
   // Title.
-  ctx.font = '700 34px Inter'
+  ctx.font = '700 29px Inter'
   ctx.fillStyle = '#ffffff'
   titleLines.forEach((line, i) => {
     ctx.fillText(line, tx, firstTitleBaseline + i * lineH)
@@ -229,7 +233,7 @@ function drawPanel(
 
   // Source.
   if (sourceText) {
-    ctx.font = '400 19px Inter'
+    ctx.font = '400 18px Inter'
     ctx.fillStyle = 'rgba(255,255,255,0.78)'
     ctx.fillText(sourceText, tx, sourceBaseline)
   }
@@ -258,20 +262,23 @@ export async function renderMatchup(
   ctx.fillStyle = '#0b0d12'
   ctx.fillRect(0, 0, W, H)
 
-  drawPanel(ctx, top, topCover, PAD, 'A', reigningSlot === 'a')
-  drawPanel(ctx, bottom, bottomCover, PANEL_H + VS_H, 'B', reigningSlot === 'b')
+  const leftX = PAD
+  const rightX = PAD + PANEL_W + GAP
+  drawPanel(ctx, top, topCover, leftX, PAD, PANEL_W, PANEL_H, 'A', reigningSlot === 'a')
+  drawPanel(ctx, bottom, bottomCover, rightX, PAD, PANEL_W, PANEL_H, 'B', reigningSlot === 'b')
 
-  // VS divider.
-  const vsY = PANEL_H + VS_H / 2
+  // VS badge, centred in the middle channel.
+  const vsX = W / 2
+  const vsY = H / 2
   ctx.fillStyle = '#3966FE'
   ctx.beginPath()
-  ctx.arc(W / 2, vsY, 34, 0, Math.PI * 2)
+  ctx.arc(vsX, vsY, 32, 0, Math.PI * 2)
   ctx.fill()
   ctx.fillStyle = '#fff'
-  ctx.font = '800 26px Inter'
+  ctx.font = '800 24px Inter'
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  ctx.fillText('VS', W / 2, vsY + 1)
+  ctx.fillText('VS', vsX, vsY + 1)
   ctx.textAlign = 'left'
   ctx.textBaseline = 'alphabetic'
 
