@@ -28,6 +28,17 @@ plneuro.xyz) collapse to **one card**, with every source kept as provenance in
 the canonical title/url/area; description is best-of (longest), image is the
 primary's. A `↻ dedup` line in the ingest output marks a collapsed cross-post.
 
+**Self-healing:** if a cross-post entered the pool *before* its strong identity
+was known (e.g. a plneuro talk stored under its URL before we mined the YouTube
+id), the next ingest detects the stale URL-content for the same link and merges
+it into the canonical content — migrating any votes onto the surviving card and
+keeping both provenances. So re-running ingest reconciles old duplicates too.
+
+**Runs automatically:** the full (bot) process re-ingests every source every
+`INGEST_INTERVAL_HOURS` (default 3; `0` disables), so the pool stays deduped as
+sources publish without anyone running the CLI. Because dedup happens on write,
+any newly-added card is deduped as it lands.
+
 ## Run it
 
 ```bash

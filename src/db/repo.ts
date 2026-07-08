@@ -5,7 +5,7 @@
 import db from './index.js'
 import type { Card, Curator } from '../types.js'
 import { currentEdition, activeEdition } from '../config.js'
-import { sourceRank } from '../ingest/identity.js'
+import { sourceRank, canonicalUrl } from '../ingest/identity.js'
 
 // ---------------------------------------------------------------------------
 // Curators
@@ -415,6 +415,41 @@ export type ContentUpsert = {
  * fields) and best-of merges (longest description; the primary's image, else any
  * non-null). Idempotent. Returns the content id.
  */
+/**
+ * Merge the `loserId` content into `winnerId`: migrate the loser card's votes to
+ * the winner's card (or re-link the loser card if the winner has none yet), carry
+ * over provenance + match counts, then delete the loser content. Used to heal a
+ * card that gained a STRONGER identity later (e.g. a URL-keyed content superseded
+ * by the same asset's YouTube id) — so cross-posts that slipped in before the id
+ * was known collapse on the next ingest. Votes (source of truth) are preserved.
+ */
+function mergeContentInto(loserId: number, winnerId: number): void {
+  if (loserId === winnerId) return
+  const winnerCard = db.prepare('SELECT id, matches FROM cards WHERE content_id = ?').get(winnerId) as
+    | { id: number; matches: number }
+    | undefined
+  const loserCard = db.prepare('SELECT id, matches FROM cards WHERE content_id = ?').get(loserId) as
+    | { id: number; matches: number }
+    | undefined
+  if (loserCard) {
+    if (winnerCard && winnerCard.id !== loserCard.id) {
+      db.prepare('UPDATE votes SET winner_card_id = ? WHERE winner_card_id = ?').run(winnerCard.id, loserCard.id)
+      db.prepare('UPDATE votes SET loser_card_id = ? WHERE loser_card_id = ?').run(winnerCard.id, loserCard.id)
+      // Drop any now-degenerate self-match (a vote between the two duplicates).
+      db.prepare('DELETE FROM votes WHERE winner_card_id = loser_card_id').run()
+      db.prepare('UPDATE cards SET matches = matches + ? WHERE id = ?').run(loserCard.matches, winnerCard.id)
+      db.prepare('DELETE FROM cards WHERE id = ?').run(loserCard.id)
+    } else if (!winnerCard) {
+      // Winner content has no card yet — keep the loser card, re-point it.
+      db.prepare('UPDATE cards SET content_id = ? WHERE id = ?').run(winnerId, loserCard.id)
+    }
+  }
+  // Carry over provenance (skip rows that would collide), then cascade-delete the
+  // loser content (removing any leftover content_sources).
+  db.prepare('UPDATE OR IGNORE content_sources SET content_id = ? WHERE content_id = ?').run(winnerId, loserId)
+  db.prepare('DELETE FROM content WHERE id = ?').run(loserId)
+}
+
 export const upsertContent = db.transaction((c: ContentUpsert): number => {
   const existing = db
     .prepare(
@@ -488,6 +523,17 @@ export const upsertContent = db.transaction((c: ContentUpsert): number => {
         desc, image, id: contentId,
       })
     }
+  }
+
+  // Self-heal: if this asset now resolves to a YouTube identity but a separate
+  // URL-keyed content still exists for the same link (a cross-post that entered
+  // before we knew the video id), merge that stale content into this one.
+  if (c.identityKind === 'youtube') {
+    const urlKey = 'url:' + canonicalUrl(c.url)
+    const dupe = db
+      .prepare('SELECT id FROM content WHERE identity_key = ? AND id != ?')
+      .get(urlKey, contentId) as { id: number } | undefined
+    if (dupe) mergeContentInto(dupe.id, contentId)
   }
 
   db.prepare(
