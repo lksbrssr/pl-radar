@@ -31,6 +31,14 @@ export const config = {
    *  out (king-of-the-hill exposure cap). Stops one hot card from hogging the
    *  comparison budget so late-added and mid-pack cards still get sampled. */
   reignCap: Number(process.env.REIGN_CAP || 4),
+
+  /** Show the diversity-balanced cut (vs. pure score order) on the public Radar.
+   *  Set RADAR_COMPOSE=0 to display the raw top-N by score instead. */
+  radarCompose: (process.env.RADAR_COMPOSE ?? '1') !== '0',
+  /** Diversity penalties (Elo points) for the balanced cut: how much a repeated
+   *  focus area / angle is discounted when composing the digest. */
+  composeLambdaArea: Number(process.env.COMPOSE_LAMBDA_AREA || 60),
+  composeLambdaAngle: Number(process.env.COMPOSE_LAMBDA_ANGLE || 30),
 } as const
 
 export function isAdmin(userId: number): boolean {

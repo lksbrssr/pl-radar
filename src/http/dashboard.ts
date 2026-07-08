@@ -122,6 +122,12 @@ export function renderDashboard(): string {
     display:inline-flex;align-items:center;gap:7px;}
   .lchip:hover{border-color:var(--muted);}
   .lchip.on{background:var(--ink);color:var(--white);border-color:var(--ink);}
+  .cuttoggle{display:inline-flex;gap:0;border:1px solid var(--line);border-radius:999px;overflow:hidden;margin:2px 0 12px;}
+  .cuttoggle .ctbtn{border:0;background:var(--white);color:var(--muted);padding:6px 14px;font-size:12.5px;
+    cursor:pointer;transition:all .12s;font-weight:600;}
+  .cuttoggle .ctbtn.on{background:var(--ink);color:var(--white);}
+  .cuttoggle .ctbtn:not(.on):hover{color:var(--ink);}
+  .cuthint{font-size:12px;color:var(--muted);margin:-6px 0 12px;}
   /* carousel (recycled from plrd.org PLRadar) */
   .radar{border:1px solid var(--line);border-radius:18px;overflow:hidden;background:var(--white);
     box-shadow:0 8px 30px rgba(15,17,21,.06);}
@@ -471,7 +477,7 @@ function areaIcon(slug, px){
     ';-webkit-mask:url('+u+') center/contain no-repeat;mask:url('+u+') center/contain no-repeat"></span>';
 }
 
-var state = { editions:[], edition:null, role:'', focus:[], dataSeg:'', overview:null, radar:null, cards:{} };
+var state = { editions:[], edition:null, role:'', focus:[], dataSeg:'', overview:null, radar:null, radarCut:null, cards:{} };
 try{ var saved=JSON.parse(localStorage.getItem('radar-lens')||'{}'); if(saved){ state.role=saved.role||''; state.focus=saved.focus||[]; } }catch(e){}
 function saveLens(){ try{ localStorage.setItem('radar-lens', JSON.stringify({role:state.role,focus:state.focus})); }catch(e){} }
 function lensActive(){ return !!(state.role || (state.focus&&state.focus.length)); }
@@ -525,12 +531,14 @@ function renderRadar(){
         (lensActive()?'<button class="lreset" id="lreset">Reset to all curators</button>':'')+'</div>'+
       '<div class="lchips">'+focusChipsHtml+'</div>'+
     '</div>'+
+    cutToggle()+
     '<div id="radarMount"></div>'+
     '<p class="lead" style="margin-top:14px">Showing the top '+((state.radar&&state.radar.items.length)||0)+' of '+((state.radar&&state.radar.poolSize)||0)+' candidates'+(curEd.current?' still in the running this month.':' from that edition.')+'</p>'+
     cutNote();
   el('selMonth').addEventListener('change', function(e){ if(e.target.value){ state.edition=e.target.value; loadRadar(); } });
   el('selRole').addEventListener('change', function(e){ state.role=e.target.value; saveLens(); loadRadar(); });
   var lr=el('lreset'); if(lr) lr.addEventListener('click', function(){ state.role=''; state.focus=[]; saveLens(); loadRadar(); });
+  v.querySelectorAll('[data-cut]').forEach(function(b){ b.addEventListener('click', function(){ state.radarCut=b.getAttribute('data-cut'); applyRadarCut(); renderRadar(); }); });
   v.querySelectorAll('[data-focus]').forEach(function(b){ b.addEventListener('click', function(){
     var s=b.getAttribute('data-focus'); var i=state.focus.indexOf(s);
     if(i>=0) state.focus.splice(i,1); else state.focus.push(s);
@@ -608,11 +616,33 @@ function cutNote(){
   }
   return '<p class="lead" style="margin-top:-8px">⚡ The #'+((r.items&&r.items.length)||5)+'/#'+(((r.items&&r.items.length)||5)+1)+' spot is still a toss-up (margin '+r.cut.margin+' pts)'+(cur?' — votes are still deciding it.':'.')+'</p>';
 }
+// Balanced vs. by-score cut toggle (General radar only). The server returns both
+// balancedItems (diversity-composed) and scoreItems (raw conservative-score
+// order); applyRadarCut swaps which one drives the carousel.
+function applyRadarCut(){
+  var r=state.radar; if(!r) return;
+  if(r.balancedItems && r.scoreItems){
+    if(!state.radarCut) state.radarCut = r.composed ? 'balanced' : 'score';
+    r.items = state.radarCut==='score' ? r.scoreItems : r.balancedItems;
+  }
+}
+function cutToggle(){
+  var r=state.radar;
+  if(lensActive() || !r || !r.balancedItems || !r.scoreItems || r.scoreItems.length<2) return '';
+  var bal = state.radarCut!=='score';
+  return '<div class="cuttoggle">'+
+      '<button class="ctbtn'+(bal?' on':'')+'" data-cut="balanced">⚖️ Balanced</button>'+
+      '<button class="ctbtn'+(bal?'':' on')+'" data-cut="score">🏅 By score</button>'+
+    '</div>'+
+    '<p class="cuthint">'+(bal
+      ? 'A spread across focus areas &amp; angles — strong <em>and</em> balanced.'
+      : 'Strictly the top cards by confidence-aware score.')+'</p>';
+}
 function loadRadar(){
   var q='/api/radar.json?edition='+encodeURIComponent(state.edition)+'&limit=5';
   if(state.role) q+='&role='+encodeURIComponent(state.role);
   if(state.focus.length) q+='&focus='+encodeURIComponent(state.focus.join(','));
-  getJSON(q).then(function(r){ state.radar=r; renderRadar(); });
+  getJSON(q).then(function(r){ state.radar=r; applyRadarCut(); renderRadar(); });
 }
 
 // ---- Data view (pairwise part-worths) ----

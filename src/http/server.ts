@@ -42,6 +42,7 @@ import {
   cutConfidence,
   coverageGaps,
 } from '../ranking/strength.js'
+import { composeCut } from '../ranking/compose.js'
 import { renderDashboard } from './dashboard.js'
 import { currentEdition, activeEdition, editionLabel } from '../config.js'
 import { SOURCES } from '../ingest/sources/index.js'
@@ -179,19 +180,27 @@ export function createServer() {
     const limit = Math.min(Number(req.query.limit) || 5, 12)
 
     if (!hasLens(profile)) {
-      const ranking = editionStrengthRanking(edition)
-      const items = ranking
-        .slice(0, limit)
-        .map((r) => toRadarItem(getCard(r.id)!, r.rating, { rd: r.se, score: r.score }))
+      // Compose once: gives us the raw score order (top), the diversity-balanced
+      // selection (composed), and the full ranking for the cut-confidence note.
+      const comp = composeCut(edition, limit)
+      const toItems = (rows: typeof comp.ranking) =>
+        rows.map((r) => toRadarItem(getCard(r.id)!, r.rating, { rd: r.se, score: r.score }))
+      const scoreItems = toItems(comp.top)
+      const balancedItems = toItems(comp.composed)
       return res.json({
         edition,
         label: editionLabel(edition),
         profile,
-        rankedBy: 'confidence',
-        cut: cutConfidence(ranking, limit),
+        rankedBy: config.radarCompose ? 'balanced' : 'confidence',
+        cut: cutConfidence(comp.ranking, limit),
         peers: countCuratorsMatching(profile),
-        poolSize: ranking.length,
-        items,
+        poolSize: comp.ranking.length,
+        // `items` respects RADAR_COMPOSE; both cuts are always returned so the UI
+        // can offer a toggle.
+        items: config.radarCompose ? balancedItems : scoreItems,
+        scoreItems,
+        balancedItems,
+        composed: config.radarCompose,
       })
     }
 
