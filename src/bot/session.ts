@@ -18,6 +18,8 @@ export type SessionState = {
   slotBId?: number
   /** Which slot holds the reigning champion (null on the first comparison). */
   championSlot?: 'a' | 'b' | null
+  /** Consecutive wins by the current champion (exposure cap; see config.reignCap). */
+  reign?: number
   /** 1-based index of the current comparison within the round. */
   comparison?: number
   /** Votes cast so far this round. */
