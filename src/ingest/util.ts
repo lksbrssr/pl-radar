@@ -57,6 +57,33 @@ export function parseRss(xml: string): FeedItem[] {
   return items
 }
 
+/**
+ * Clean a feed description into plain, display-ready text: strip HTML tags,
+ * decode entities (named + numeric), remove the WordPress “The post … appeared
+ * first on …” boilerplate, collapse whitespace, and cap the length. Feeds like
+ * plneuro.xyz ship full HTML in <description>, which otherwise renders as raw
+ * `<p>…&#8217;…</p>` markup on the cards.
+ */
+export function sanitizeText(input: string | null | undefined, maxLen = 300): string {
+  if (!input) return ''
+  let s = String(input)
+  // Drop the WP “The post <a>…</a> appeared first on <a>…</a>.” trailer (HTML form).
+  s = s.replace(/<p>\s*The post[\s\S]*?appeared first on[\s\S]*?<\/p>\s*$/i, ' ')
+  s = s.replace(/<[^>]+>/g, ' ') // strip tags
+  s = s
+    .replace(/&#x([0-9a-fA-F]+);/g, (_m, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_m, d) => String.fromCodePoint(parseInt(d, 10)))
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&nbsp;/g, ' ')
+  // Plain-text fallback for the same boilerplate once tags are gone.
+  s = s.replace(/\s*The post\b[\s\S]*?\bappeared first on\b[\s\S]*$/i, '')
+  s = s.replace(/\s+/g, ' ').trim()
+  if (s.length > maxLen) {
+    s = s.slice(0, maxLen).replace(/\s+\S*$/, '').trim() + '…'
+  }
+  return s
+}
+
 export function slugify(s: string): string {
   return s
     .toLowerCase()

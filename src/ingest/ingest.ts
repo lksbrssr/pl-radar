@@ -12,6 +12,7 @@ import { SOURCES } from './sources/index.js'
 import type { Candidate } from './types.js'
 import { upsertContent, upsertCardForContent, getActiveCards } from '../db/repo.js'
 import { contentIdentity } from './identity.js'
+import { sanitizeText } from './util.js'
 
 /** Editions ingested by default. June & July 2026 for the initial rollout. */
 export const DEFAULT_EDITIONS = ['2026-06', '2026-07']
@@ -109,9 +110,9 @@ export async function ingestSources(opts: IngestOptions = {}): Promise<IngestRes
         identityKey: identity.key,
         identityKind: identity.kind,
         sourceKey: source.key,
-        title: c.title,
+        title: sanitizeText(c.title, 200) || c.title,
         url: c.href,
-        description: c.description ?? null,
+        description: sanitizeText(c.description) || null,
         image: c.image ?? null,
         areaSlug: c.areaSlug,
         areaLabel: c.areaLabel,
