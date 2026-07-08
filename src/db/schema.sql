@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS curators (
   role           TEXT,                         -- segment tag: researcher/engineer/capital/...
   cadence        INTEGER,                      -- preferred pairs per day
   status         TEXT NOT NULL DEFAULT 'active', -- active | paused
+  web_token      TEXT UNIQUE,                   -- set for web voters (localStorage token); NULL for Telegram curators
   created_at     TEXT NOT NULL DEFAULT (datetime('now')),
   onboarded_at   TEXT,                         -- set when the wizard completes
   last_active_at TEXT

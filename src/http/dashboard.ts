@@ -180,6 +180,40 @@ export function renderDashboard(): string {
   .vote-cta h3{font-size:24px;margin-bottom:8px;}
   .vote-cta .btn{display:inline-block;margin-top:16px;background:var(--ink);color:var(--white);border-radius:999px;padding:12px 22px;font-weight:600;}
   .vote-cta .btn:hover{text-decoration:none;opacity:.9;}
+  .vform{max-width:560px;} .vform .field{margin-bottom:16px;display:block;}
+  .vsplit{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:10px 0 18px;align-items:start;}
+  @media(max-width:640px){.vsplit{grid-template-columns:1fr;}}
+  .vcard{border:1px solid var(--line);background:var(--white);border-radius:16px;overflow:hidden;
+    cursor:pointer;text-align:left;color:inherit;font-family:inherit;padding:0;width:100%;
+    display:flex;flex-direction:column;
+    transition:transform .22s ease,box-shadow .22s,border-color .22s,opacity .24s ease;}
+  .vcard:hover{transform:translateY(-3px);box-shadow:0 12px 28px rgba(19,19,22,.12);border-color:var(--muted);}
+  .vcard.leaving{opacity:0;transform:translateY(10px) scale(.965);pointer-events:none;}
+  .vcard.entering{opacity:0;transform:translateY(10px) scale(.98);}
+  .vcard.won{box-shadow:0 0 0 2px var(--blue);}
+  /* voting progress + slow-down warning */
+  .vprogress{background:var(--gray-50);border:1px solid var(--line);border-radius:14px;padding:13px 16px;margin:2px 0 14px;}
+  .vprogress .row{display:flex;justify-content:space-between;align-items:baseline;font-size:13px;margin-bottom:8px;}
+  .vprogress .track{height:10px;background:var(--gray-200);border-radius:999px;overflow:hidden;}
+  .vprogress .fillp{height:100%;width:0;border-radius:999px;transition:width .5s ease;
+    background:linear-gradient(90deg,#3966FE,#12bfdf);}
+  .warnsheet{max-width:420px;text-align:center;padding:32px 26px 26px;position:relative;}
+  .warnsheet .wicon{font-size:40px;margin-bottom:8px;}
+  .warnsheet h3{font-family:Newsreader,serif;font-size:24px;margin-bottom:8px;}
+  .warnsheet p{color:var(--muted);font-size:14px;line-height:1.55;margin:0 0 20px;}
+  .vcard .vmedia{position:relative;aspect-ratio:16/9;}
+  .vcard .vmedia img,.vcard .vmedia .ph{width:100%;height:100%;object-fit:cover;display:block;}
+  .vcard .varea{position:absolute;left:10px;bottom:10px;color:#fff;font-size:10px;font-weight:600;
+    letter-spacing:.05em;text-transform:uppercase;padding:3px 8px;border-radius:999px;}
+  .vcard .vbody{padding:14px 16px 18px;}
+  .vcard .vbody .kicker{display:block;}
+  .vcard .vbody h4{font-family:Newsreader,serif;font-size:19px;margin:6px 0 6px;}
+  .vcard .vbody p{font-size:13px;color:var(--muted);margin:0;}
+  .reign{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+    color:#8a6d00;background:#fdf0c8;padding:2px 8px;border-radius:999px;margin-bottom:2px;}
+  .vversus{text-align:center;color:var(--muted);font-size:13px;margin:0 0 10px;}
+  .votefoot{display:flex;gap:16px;align-items:center;color:var(--muted);font-size:13px;flex-wrap:wrap;}
+  .votefoot button,.votefoot a{color:var(--blue);background:none;border:none;cursor:pointer;font-size:13px;font-family:inherit;padding:0;}
   /* modal */
   .modal{position:fixed;inset:0;background:rgba(19,19,22,.55);display:none;align-items:center;justify-content:center;padding:20px;z-index:50;}
   .modal.open{display:flex;}
@@ -231,6 +265,14 @@ export function renderDashboard(): string {
   </div>
 </div></div>
 
+<div class="modal" id="warnmodal"><div class="sheet warnsheet">
+  <button class="close" id="warnclose">×</button>
+  <div class="wicon">🐢</div>
+  <h3>Whoa — slow down a sec</h3>
+  <p>You're voting very fast. Take a moment to actually read each card — rapid-fire clicks don't count toward the Radar.</p>
+  <button class="btn" id="warngot">Got it — I'll read them</button>
+</div></div>
+
 <script>
 ${CLIENT_JS}
 </script>
@@ -258,6 +300,11 @@ var state = { editions:[], edition:null, role:'', focus:[], overview:null, radar
 try{ var saved=JSON.parse(localStorage.getItem('radar-lens')||'{}'); if(saved){ state.role=saved.role||''; state.focus=saved.focus||[]; } }catch(e){}
 function saveLens(){ try{ localStorage.setItem('radar-lens', JSON.stringify({role:state.role,focus:state.focus})); }catch(e){} }
 function lensActive(){ return !!(state.role || (state.focus&&state.focus.length)); }
+// Web-voter identity (token-based; reuses the role+focus profile).
+var web = null; try{ web = JSON.parse(localStorage.getItem('radar-web')||'null'); }catch(e){}
+function saveWeb(){ try{ localStorage.setItem('radar-web', JSON.stringify(web)); }catch(e){} }
+function newToken(){ return (window.crypto&&crypto.randomUUID)?crypto.randomUUID():'w-'+Date.now()+'-'+Math.random().toString(16).slice(2); }
+var vs = null; // active voting session {a,b,champ,count,busy}
 
 // ---- Router ----
 function route(){ return (location.hash.replace('#','')||'radar'); }
@@ -423,17 +470,117 @@ function renderData(){
 }
 function labelForRole(ov,key){ var r=ov.lenses.roles.find(function(x){return x.key===key;}); return r?r.label:key; }
 
-// ---- Vote view (full web flow ships in the next PR) ----
+// ---- Vote view (in-browser king-of-the-hill) ----
 function renderVote(){
+  if(web && web.id){ renderVoteSession(); } else { renderVoteOnboarding(); }
+}
+
+function renderVoteOnboarding(){
+  var roleOpts = '<option value="">Prefer not to say</option>'+state.overview.lenses.roles.map(function(r){ return '<option value="'+r.key+'">'+esc(r.emoji+' '+r.label)+'</option>'; }).join('');
+  var chips = state.overview.lenses.areas.map(function(a){ return '<button type="button" class="lchip" data-vfocus="'+a.slug+'">'+esc(a.emoji+' '+a.label)+'</button>'; }).join('');
   el('view').innerHTML =
     '<h2 class="title">Vote</h2>'+
-    '<p class="lead">Help decide what makes the Radar. Two cards, tap the stronger signal — the winner stays and faces a new challenger.</p>'+
-    '<div class="vote-cta">'+
-      '<h3>Vote in Telegram 🗳️</h3>'+
-      '<p class="muted">The lowest-friction way to curate: get a few match-ups a day, right in your chat. ~30 seconds.</p>'+
-      '<a class="btn" href="https://t.me/lksbrssr_radar_bot" target="_blank">Open @lksbrssr_radar_bot →</a>'+
-      '<p class="muted" style="margin-top:18px;font-size:13px">In-browser voting is coming in the next update — you\'ll be able to set your interests and vote right here.</p>'+
+    '<p class="lead">Two cards, tap the stronger signal — the winner stays and faces a new challenger. First, a little about you so your votes count toward the right peer segment.</p>'+
+    '<div class="vform">'+
+      '<div class="field"><label>Your role</label><select id="vRole">'+roleOpts+'</select></div>'+
+      '<div class="field"><label>Your interests</label><div class="lchips" id="vChips">'+chips+'</div></div>'+
+      '<button class="btn" id="vStart">Start voting →</button>'+
+      '<p class="muted" style="margin-top:16px;font-size:13px">Prefer chat? You can also vote in Telegram: <a href="https://t.me/lksbrssr_radar_bot" target="_blank">@lksbrssr_radar_bot</a></p>'+
     '</div>';
+  var focus=[];
+  el('view').querySelectorAll('[data-vfocus]').forEach(function(b){ b.addEventListener('click', function(){
+    var s=b.getAttribute('data-vfocus'); var i=focus.indexOf(s);
+    if(i>=0){ focus.splice(i,1); b.classList.remove('on'); } else { focus.push(s); b.classList.add('on'); }
+  }); });
+  el('vStart').addEventListener('click', function(){
+    var role=el('vRole').value; var token=newToken();
+    el('vStart').textContent='Starting…'; el('vStart').disabled=true;
+    fetch('/api/web/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:token,role:role,focus:focus})})
+      .then(function(r){return r.json();}).then(function(res){
+        web={token:token,id:res.id,role:role,focus:focus}; saveWeb(); renderVoteSession();
+      });
+  });
+}
+
+function challenger(excludeCsv){
+  return getJSON('/api/vote/challenger'+(excludeCsv?('?exclude='+encodeURIComponent(excludeCsv)):'')).then(function(r){ return r.card; });
+}
+function voteCardHtml(slot, card, reigning, entering){
+  var g=area(card.areaSlug);
+  var media = card.image ? '<img src="'+esc(card.image)+'" alt="" onerror="this.style.display=\'none\'">' : '<div class="ph"></div>';
+  return '<button class="vcard'+(entering?' entering':'')+'" data-slot="'+slot+'">'+
+    '<div class="vmedia" style="background:'+g.g+'">'+media+'<span class="varea" style="background:'+g.c+'">'+esc(card.areaLabel)+'</span></div>'+
+    '<div class="vbody">'+(reigning?'<span class="reign">✓ your pick</span>':'')+
+      '<span class="kicker">'+esc(card.type)+(card.source?' · '+esc(card.source):'')+'</span>'+
+      '<h4>'+esc(card.title)+'</h4>'+(card.description?'<p>'+esc(card.description)+'</p>':'')+
+    '</div></button>';
+}
+var warnOpen=false;
+function openWarn(){ warnOpen=true; el('warnmodal').classList.add('open'); }
+function closeWarn(){ warnOpen=false; el('warnmodal').classList.remove('open'); }
+function updateStats(s){
+  var p=el('vprog'); if(!p||!s) return; p.style.display='block';
+  var pct = s.topVotes ? Math.max(6, Math.round(s.votes/s.topVotes*100)) : 6;
+  el('vprogFill').style.width=pct+'%';
+  var rank = s.rank===1 && s.votes>0 ? '🏆 you\'re the top curator!' : (s.rank?('#'+s.rank+' of '+s.of+' curators'):(s.of+' curators'));
+  el('vprogLabel').textContent = s.votes+' vote'+(s.votes===1?'':'s')+' · '+rank;
+}
+function paintSlot(slot, card, reigning, entering){
+  var host=el('slot'+slot.toUpperCase()); if(!host) return;
+  host.innerHTML = voteCardHtml(slot, card, reigning, entering);
+  var btn=host.querySelector('[data-slot]');
+  btn.addEventListener('click', function(){ pick(slot); });
+  if(entering){ requestAnimationFrame(function(){ requestAnimationFrame(function(){ btn.classList.remove('entering'); }); }); }
+}
+function delay(ms){ return new Promise(function(r){ setTimeout(r,ms); }); }
+function renderVoteSession(){
+  el('view').innerHTML =
+    '<h2 class="title">Vote</h2>'+
+    '<p class="lead">Tap the stronger signal for the Radar. Your pick stays and faces a new challenger.</p>'+
+    '<div class="vprogress" id="vprog" style="display:none">'+
+      '<div class="row"><span id="vprogLabel"></span><span class="muted">vs. the top curator</span></div>'+
+      '<div class="track"><div class="fillp" id="vprogFill"></div></div></div>'+
+    '<p class="vversus">🅰 &nbsp; vs &nbsp; 🅱</p>'+
+    '<div class="vsplit" id="vsplit"><div id="slotA"><div class="loading">Loading match-up…</div></div><div id="slotB"></div></div>'+
+    '<div class="votefoot"><button id="vReset">Change interests</button>'+
+      '<a href="https://t.me/lksbrssr_radar_bot" target="_blank">Vote in Telegram instead</a></div>';
+  el('vReset').addEventListener('click', function(){ web=null; saveWeb(); localStorage.removeItem('radar-web'); renderVote(); });
+  vs={a:null,b:null,champ:null,count:0,busy:false,lastTs:0};
+  if(web&&web.token){ getJSON('/api/vote/me?token='+encodeURIComponent(web.token)).then(function(r){ updateStats(r.stats); }); }
+  challenger('').then(function(a){ vs.a=a; return challenger(''+a.id); }).then(function(b){
+    vs.b=b; paintSlot('a', vs.a, false, false); paintSlot('b', vs.b, false, false);
+  });
+}
+function pick(slot){
+  if(!vs || vs.busy || warnOpen) return;
+  var now=Date.now();
+  // Too fast since your last vote? Block with a modal you must dismiss.
+  if(vs.lastTs && now-vs.lastTs < 1200){ openWarn(); return; }
+  vs.busy=true;
+  var winner = slot==='a'?vs.a:vs.b; var loser = slot==='a'?vs.b:vs.a;
+  var loserSlot = slot==='a'?'b':'a';
+  var winCard=el('slot'+slot.toUpperCase()).querySelector('.vcard');
+  var loseCard=el('slot'+loserSlot.toUpperCase()).querySelector('.vcard');
+  if(winCard) winCard.classList.add('won');
+  if(loseCard) loseCard.classList.add('leaving');
+  Promise.all([
+    fetch('/api/vote',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:web.token,winnerId:winner.id,loserId:loser.id})}).then(function(r){return r.json();}),
+    challenger(winner.id+','+loser.id),
+    delay(300)
+  ]).then(function(arr){
+    var res=arr[0], nc=arr[1];
+    if(res && res.tooFast){ // server rejected as too fast — revert, don't count
+      if(loseCard) loseCard.classList.remove('leaving');
+      if(winCard) winCard.classList.remove('won');
+      openWarn(); if(res.stats) updateStats(res.stats); vs.busy=false; return;
+    }
+    vs.lastTs=now; vs.count++; vs.champ=slot;
+    if(slot==='a'){ vs.b=nc; } else { vs.a=nc; }
+    paintSlot(loserSlot, nc, false, true);   // fresh challenger animates in
+    paintSlot(slot, winner, true, false);     // winner stays, now marked 'your pick'
+    if(res && res.stats) updateStats(res.stats);
+    vs.busy=false;
+  }).catch(function(){ if(loseCard) loseCard.classList.remove('leaving'); if(winCard) winCard.classList.remove('won'); vs.busy=false; });
 }
 
 // ---- Modal ----
@@ -454,6 +601,11 @@ function openCard(c){
 function closeModal(){ el('modal').classList.remove('open'); }
 el('m-close').onclick=closeModal;
 el('modal').addEventListener('click',function(e){ if(e.target===el('modal')) closeModal(); });
+// Slow-down warning modal (must be dismissed before voting continues).
+el('warnclose').onclick=closeWarn;
+el('warngot').onclick=closeWarn;
+el('warnmodal').addEventListener('click',function(e){ if(e.target===el('warnmodal')) closeWarn(); });
+document.addEventListener('keydown',function(e){ if(e.key==='Escape'){ closeModal(); closeWarn(); } });
 
 // ---- Boot ----
 function render(){

@@ -16,6 +16,7 @@ import express from 'express'
 import { config } from '../config.js'
 import * as repo from '../db/repo.js'
 import { getCard } from '../db/repo.js'
+import { updateRatings } from '../ranking/elo.js'
 import {
   globalLeaderboard,
   leaderboardForRole,
@@ -72,8 +73,30 @@ function parseProfile(q: Record<string, unknown>): Profile {
   return p
 }
 
+/** Minimum ms between two votes from the same voter (anti-spam guard). */
+const MIN_VOTE_MS = 900
+/** In-memory last-vote timestamps (process-local; fine for a single machine). */
+const lastVoteAt = new Map<number, number>()
+
+/** Minimal card shape for the in-browser voting UI. */
+function toVoteCard(c: Card) {
+  return {
+    id: c.id,
+    title: c.title,
+    description: c.description ?? undefined,
+    type: c.type,
+    areaSlug: c.area_slug,
+    areaLabel: c.area_label,
+    source: c.source ?? undefined,
+    sourceKind: c.source_kind,
+    image: c.image ?? undefined,
+    href: c.href,
+  }
+}
+
 export function createServer() {
   const app = express()
+  app.use(express.json())
 
   // NOTE: no X-Frame-Options / restrictive CSP — keeps the results dashboard
   // embeddable from *.plnetwork.io (see the PL app-store rules).
@@ -121,6 +144,81 @@ export function createServer() {
       poolSize: ranked.length,
       items,
     })
+  })
+
+  // --- In-browser voting (for people who don't want to vote in Telegram) ---
+
+  // Register/refresh a browser voter from a client-generated token + profile.
+  app.post('/api/web/register', (req, res) => {
+    const { token, role, focus, name } = req.body ?? {}
+    if (typeof token !== 'string' || token.length < 8) {
+      return res.status(400).json({ error: 'missing token' })
+    }
+    const id = repo.registerWebCurator({
+      token,
+      role: typeof role === 'string' ? role : undefined,
+      focus: Array.isArray(focus) ? focus.map(String) : undefined,
+      name: typeof name === 'string' ? name : undefined,
+    })
+    res.json({ id })
+  })
+
+  // Pick a fresh challenger for the current edition, excluding the cards already
+  // on screen (comma-separated ids). Least-seen first, so votes spread evenly.
+  app.get('/api/vote/challenger', (req, res) => {
+    const ids = String(req.query.exclude || '')
+      .split(',')
+      .map(Number)
+      .filter((n) => Number.isFinite(n))
+    const card = repo.pickChallengerExcluding(ids)
+    if (!card) return res.status(404).json({ error: 'no cards' })
+    res.json({ card: toVoteCard(card) })
+  })
+
+  // A voter's standing (for the "top curator" progress bar).
+  app.get('/api/vote/me', (req, res) => {
+    const token = req.query.token
+    const curator = typeof token === 'string' ? repo.getCuratorByToken(token) : undefined
+    if (!curator) return res.json({ stats: { votes: 0, rank: 0, of: repo.countCurators(), topVotes: 0 } })
+    res.json({ stats: repo.voterStats(curator.id) })
+  })
+
+  // Record one pairwise web vote (winner beat loser) + update Elo.
+  // A too-fast vote (< MIN_VOTE_MS since this voter's previous one) is rejected
+  // as "tooFast" and NOT counted — a server-side guard so the client-side
+  // slow-down nudge can't be bypassed by scripting.
+  app.post('/api/vote', (req, res) => {
+    const { token, winnerId, loserId } = req.body ?? {}
+    const curator = typeof token === 'string' ? repo.getCuratorByToken(token) : undefined
+    if (!curator) return res.status(401).json({ error: 'unknown voter' })
+
+    const now = Date.now()
+    const last = lastVoteAt.get(curator.id)
+    if (last && now - last < MIN_VOTE_MS) {
+      return res.json({ ok: false, tooFast: true, stats: repo.voterStats(curator.id) })
+    }
+
+    const winner = getCard(Number(winnerId))
+    const loser = getCard(Number(loserId))
+    if (!winner || !loser || winner.id === loser.id) {
+      return res.status(400).json({ error: 'bad pair' })
+    }
+    const cur = currentEdition()
+    if (winner.edition !== cur || loser.edition !== cur || !winner.active || !loser.active) {
+      return res.status(400).json({ error: 'not votable this edition' })
+    }
+    const rated = updateRatings(winner.rating, loser.rating)
+    repo.recordVote({
+      curatorId: curator.id,
+      winnerId: winner.id,
+      loserId: loser.id,
+      roundId: null,
+      newWinnerRating: rated.winner,
+      newLoserRating: rated.loser,
+    })
+    repo.touchCurator(curator.id)
+    lastVoteAt.set(curator.id, now)
+    res.json({ ok: true, stats: repo.voterStats(curator.id) })
   })
 
   // Everything the Data view needs, in one call.
