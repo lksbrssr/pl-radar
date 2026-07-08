@@ -77,6 +77,31 @@ export function getFocusAreas(curatorId: number): string[] {
   ).map((r) => r.area_slug)
 }
 
+/** Onboarded curators + vote counts + focus areas — for the dashboard. */
+export function listCuratorsWithStats() {
+  const rows = db
+    .prepare(
+      `SELECT c.id, c.username, c.first_name, c.role, c.cadence, c.status,
+              c.created_at, c.last_active_at,
+              (SELECT COUNT(*) FROM votes v WHERE v.curator_id = c.id) AS votes
+       FROM curators c
+       WHERE c.onboarded_at IS NOT NULL
+       ORDER BY votes DESC, c.created_at ASC`,
+    )
+    .all() as {
+    id: number
+    username: string | null
+    first_name: string | null
+    role: string | null
+    cadence: number | null
+    status: string
+    created_at: string
+    last_active_at: string | null
+    votes: number
+  }[]
+  return rows.map((r) => ({ ...r, focus: getFocusAreas(r.id) }))
+}
+
 export function countCurators(): number {
   return (
     db.prepare(

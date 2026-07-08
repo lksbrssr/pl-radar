@@ -40,13 +40,30 @@ function bar(pct: number, color: string): string {
   return `<div class="bar"><div class="fill" style="width:${w}%;background:${color}"></div></div>`
 }
 
-function timeAgo(iso: string): string {
+function timeAgo(iso: string | null): string {
+  if (!iso) return 'never'
   const then = new Date(iso.replace(' ', 'T') + 'Z').getTime()
   const s = Math.max(0, Math.floor((Date.now() - then) / 1000))
   if (s < 60) return `${s}s ago`
   if (s < 3600) return `${Math.floor(s / 60)}m ago`
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`
   return `${Math.floor(s / 86400)}d ago`
+}
+
+function truncate(s: string, n: number): string {
+  return s.length > n ? s.slice(0, n - 1).trimEnd() + '\u2026' : s
+}
+
+/** Focus-area chips for a curator row. */
+function focusChips(slugs: string[]): string {
+  if (!slugs.length) return '<span class="muted">all</span>'
+  return slugs
+    .map((s) => {
+      const a = FOCUS_AREAS.find((f) => f.slug === s)
+      const color = AREA_COLOR[s] ?? '#1982F4'
+      return `<span class="chip"><span class="dot" style="background:${color}"></span>${esc(a?.label ?? s)}</span>`
+    })
+    .join(' ')
 }
 
 export function renderDashboard(): string {
@@ -57,6 +74,7 @@ export function renderDashboard(): string {
   const typeRates = attributeWinRates('type')
   const kindRates = attributeWinRates('source_kind')
   const votes = repo.recentVotes(15)
+  const curatorList = repo.listCuratorsWithStats()
 
   const curators = repo.countCurators()
   const totalVotes = repo.totalVotes()
@@ -65,21 +83,44 @@ export function renderDashboard(): string {
     .map((c) => {
       const rank = ranks.get(c.id)
       const color = AREA_COLOR[c.area_slug] ?? '#1982F4'
+      const thumb = c.image
+        ? `<img class="thumb" src="${esc(c.image)}" alt="" loading="lazy">`
+        : `<div class="thumb" style="background:linear-gradient(135deg,${color},#0d0f13)"></div>`
       return `<tr>
         <td class="rank">${rank ?? '—'}</td>
+        <td>${thumb}</td>
         <td><b>${Math.round(c.rating)}</b></td>
         <td>${c.matches}</td>
         <td>
-          <span class="dot" style="background:${color}"></span>
-          ${esc(c.title)}
+          <a href="${esc(c.href)}" target="_blank" rel="noopener"><b>${esc(c.title)}</b></a>
           ${c.active ? '' : '<span class="pill muted">retired</span>'}
+          ${c.description ? `<div class="desc">${esc(truncate(c.description, 120))}</div>` : ''}
         </td>
-        <td class="muted">${esc(areaLabel(c.area_slug))}</td>
+        <td class="muted"><span class="dot" style="background:${color}"></span>${esc(areaLabel(c.area_slug))}</td>
         <td class="muted">${esc(c.type)}</td>
         <td>${c.source_kind === 'field' ? '<span class="pill field">field</span>' : '<span class="pill">internal</span>'}</td>
       </tr>`
     })
     .join('')
+
+  const curatorRows = curatorList.length
+    ? curatorList
+        .map((c) => {
+          const name = esc(c.first_name || 'Curator')
+          const handle = c.username ? `<span class="muted">@${esc(c.username)}</span>` : ''
+          const cad = c.cadence && c.cadence > 0 ? `${c.cadence}/day` : 'surprise'
+          const paused = c.status === 'paused' ? '<span class="pill muted">paused</span>' : ''
+          return `<tr>
+            <td>${name} ${handle} ${paused}</td>
+            <td class="muted">${c.role ? esc(roleLabel(c.role)) : '—'}</td>
+            <td>${focusChips(c.focus)}</td>
+            <td><b>${c.votes}</b></td>
+            <td class="muted">${cad}</td>
+            <td class="muted">${timeAgo(c.last_active_at)}</td>
+          </tr>`
+        })
+        .join('')
+    : ''
 
   const rateBlock = (
     title: string,
@@ -170,6 +211,11 @@ export function renderDashboard(): string {
   .muted { color:var(--muted); }
   .pill { font-size:11px; padding:2px 8px; border-radius:20px; background:#1d2330; color:var(--muted); margin-left:6px; }
   .pill.field { background:#3b2f10; color:#f5b300; }
+  .thumb { width:64px; height:40px; object-fit:cover; border-radius:8px; display:block; border:1px solid var(--line); }
+  .desc { color:var(--muted); font-size:12px; margin-top:3px; max-width:420px; }
+  .chip { display:inline-flex; align-items:center; font-size:11px; padding:2px 8px;
+    border-radius:20px; background:#1d2330; margin:1px 2px; white-space:nowrap; }
+  .chip .dot { width:7px; height:7px; margin-right:5px; }
   .feedrow { padding:8px 0; border-bottom:1px solid var(--line); font-size:13px; }
   .feedrow:last-child { border-bottom:none; }
   .feedmeta { color:var(--muted); font-size:11px; margin-left:6px; }
@@ -198,9 +244,19 @@ export function renderDashboard(): string {
       : ''
   }
 
-  <h2>Card pool — live Elo</h2>
+  <h2>Curators (${curators})</h2>
+  ${
+    curatorRows
+      ? `<table>
+    <thead><tr><th>Curator</th><th>Role</th><th>Focus areas</th><th>Votes</th><th>Cadence</th><th>Last active</th></tr></thead>
+    <tbody>${curatorRows}</tbody>
+  </table>`
+      : '<div class="card"><p class="muted">No curators onboarded yet — share the bot and have people send it <b>/start</b>.</p></div>'
+  }
+
+  <h2>Card pool — live Elo (${cards.length})</h2>
   <table>
-    <thead><tr><th>#</th><th>Elo</th><th>Matches</th><th>Card</th><th>Area</th><th>Type</th><th>Source</th></tr></thead>
+    <thead><tr><th>#</th><th></th><th>Elo</th><th>Votes</th><th>Card</th><th>Area</th><th>Type</th><th>Source</th></tr></thead>
     <tbody>${cardRows}</tbody>
   </table>
 
