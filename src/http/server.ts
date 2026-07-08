@@ -210,6 +210,48 @@ export function createServer() {
     })
   })
 
+  // The full candidate pool for an edition (for the Cards view), ranked by the
+  // same confidence-aware score as the published cut, with per-card provenance
+  // (Elo rating, comparisons, win rate) for the detail modal.
+  app.get('/api/cards.json', (req, res) => {
+    const edition = (req.query.edition as string) || currentEdition()
+    const cutSize = Math.min(Number(req.query.cut) || 5, 12)
+    const ranking = editionStrengthRanking(edition)
+    const wins = repo.cardWinCounts()
+    const items = ranking.map((r, idx) => {
+      const card = getCard(r.id)!
+      const w = wins.get(r.id) ?? 0
+      return {
+        key: card.key,
+        title: card.title,
+        description: card.description ?? undefined,
+        href: card.href,
+        external: !!card.external,
+        type: card.type,
+        source: card.source ?? undefined,
+        areaLabel: card.area_label,
+        areaSlug: card.area_slug,
+        date: card.edition
+          ? editionLabel(card.edition)
+          : formatDate(card.created_at),
+        image: card.image ?? undefined,
+        rank: idx + 1,
+        inCut: idx < cutSize,
+        rating: Math.round(r.rating),
+        votes: r.games,
+        winrate: r.games > 0 ? Math.round((w / r.games) * 100) : null,
+      }
+    })
+    res.json({
+      generatedAt: new Date().toISOString(),
+      edition,
+      label: editionLabel(edition),
+      cutSize,
+      total: items.length,
+      items,
+    })
+  })
+
   // --- In-browser voting (for people who don't want to vote in Telegram) ---
 
   // Register/refresh a browser voter from a client-generated token + profile.

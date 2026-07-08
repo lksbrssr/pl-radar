@@ -3,16 +3,22 @@
  * serif headings, light palette, rounded cards, black pill buttons, light/dark
  * toggle). Public by design — no auth.
  *
- * Left sidebar routes (hash-based) to three views:
+ * Left sidebar routes (hash-based):
  *   • Radar — the published Radar for a chosen month, as a swipeable carousel
  *     (top 5 cards + "you're all caught up" + Share on X) recycled from
  *     plrd.org/insights. A month selector picks the edition; a "lens" selector
  *     switches between the General Radar (all votes) and a peer segment (your
  *     role or focus area) — "what people like you found most relevant".
+ *   • Cards — the full candidate pool for a month, ranked by the confidence-aware
+ *     score, split into "on the Radar" (top 5) and "in the running" (click a
+ *     card for its provenance: Elo, comparisons, win rate).
  *   • Vote — participate in voting on the web (full flow lands in the next PR;
  *     for now it points to the Telegram bot).
- *   • Data — the curation analytics: who-values-what, curators, and the full
- *     monthly card pool (click a card for provenance).
+ *   • Insights — the curation analytics: who-values-what, consensus vs
+ *     contested, supply/demand, and the curator roster.
+ *   • Sources — where candidate cards come from.
+ *   • Methodology — a visual explainer of how the crowd's votes become the
+ *     monthly Radar (king-of-the-hill → Bradley–Terry confidence cut).
  *
  * The shell is static HTML; all content is fetched client-side from /api/*.json
  * (no framework, no build step).
@@ -263,6 +269,41 @@ export function renderDashboard(): string {
   .addsrc h3{font-size:18px;margin-bottom:6px;}
   .addsrc p{font-size:13px;color:var(--muted);margin:0 0 14px;}
   .addsrc .btn{align-self:flex-start;}
+  /* cards view */
+  .cardsec{margin-bottom:26px;}
+  .cardsec .kicker{display:block;margin-bottom:12px;}
+  .rankbadge{position:absolute;left:10px;top:10px;z-index:2;font-size:11px;font-weight:700;color:#fff;
+    background:rgba(19,19,22,.62);border-radius:999px;padding:3px 9px;font-variant-numeric:tabular-nums;backdrop-filter:blur(2px);}
+  .rankbadge.cut{background:linear-gradient(90deg,#3966FE,#12bfdf);}
+  .tile-meta{display:flex;gap:12px;margin-top:9px;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;}
+  /* methodology view */
+  .mlead{max-width:660px;}
+  .mflow{display:flex;align-items:stretch;flex-wrap:wrap;margin:24px 0 34px;}
+  .mstep{flex:1;min-width:150px;background:var(--gray-50);border:1px solid var(--line);border-radius:16px;padding:16px 16px 18px;}
+  .mstep .mnum{width:26px;height:26px;border-radius:50%;background:var(--ink);color:var(--white);
+    display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;margin-bottom:8px;}
+  .mstep h4{font-size:16px;margin-bottom:5px;}
+  .mstep p{font-size:12.5px;color:var(--muted);margin:0;line-height:1.5;}
+  .marrow{flex:none;align-self:center;color:var(--muted);font-size:20px;padding:0 6px;}
+  @media(max-width:640px){.mflow{flex-direction:column;} .marrow{transform:rotate(90deg);padding:6px 0;}}
+  .msec{margin:32px 0;}
+  .msec h3{font-size:22px;margin-bottom:6px;}
+  .msec>p{color:var(--muted);font-size:14px;max-width:660px;margin:0 0 14px;line-height:1.6;}
+  .mformula{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--gray-50);
+    border:1px solid var(--line);border-radius:12px;padding:15px 18px;font-size:15px;overflow-x:auto;margin:14px 0;text-align:center;}
+  .mformula b{color:var(--blue);font-weight:600;}
+  .mgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;}
+  .mtile{background:var(--gray-50);border:1px solid var(--line);border-radius:16px;padding:16px 18px;}
+  .mtile .ico{font-size:22px;margin-bottom:8px;}
+  .mtile h4{font-size:16px;margin-bottom:5px;}
+  .mtile p{font-size:13px;color:var(--muted);margin:0;line-height:1.55;}
+  .cirow{display:flex;align-items:center;gap:12px;margin:12px 0;font-size:13px;}
+  .cirow .cilabel{width:34px;flex:none;font-weight:600;color:var(--muted);}
+  .citrack{flex:1;height:22px;position:relative;background:var(--gray-200);border-radius:6px;}
+  .ciband{position:absolute;top:0;height:22px;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700;}
+  .ciband.in{background:linear-gradient(90deg,#3966FE,#12bfdf);}
+  .ciband.out{background:var(--muted);}
+  .cinote{font-size:12.5px;color:var(--muted);margin:8px 0 0;}
   /* modal */
   .modal{position:fixed;inset:0;background:rgba(19,19,22,.55);display:none;align-items:center;justify-content:center;padding:20px;z-index:50;}
   .modal.open{display:flex;}
@@ -289,9 +330,11 @@ export function renderDashboard(): string {
     </div>
     <nav class="nav" id="nav">
       <button data-route="radar"><span class="ic">📡</span> Radar</button>
+      <button data-route="cards"><span class="ic">🃏</span> Cards</button>
       <button data-route="vote"><span class="ic">🗳️</span> Vote</button>
       <button data-route="data"><span class="ic">📊</span> Insights</button>
       <button data-route="sources"><span class="ic">🛰️</span> Sources</button>
+      <button data-route="method"><span class="ic">🧭</span> Methodology</button>
     </nav>
     <div class="side-foot">
       <button class="toggle" id="themeToggle">◐ Theme</button>
@@ -762,6 +805,109 @@ function renderSources(){
   });
 }
 
+// ---- Cards view (full monthly pool) ----
+function renderCards(){
+  var v=el('view'); var eds=state.editions;
+  var oldest = eds.length? eds[eds.length-1].edition : state.edition;
+  var newest = eds.length? eds[0].edition : state.edition;
+  v.innerHTML =
+    '<h2 class="title">Cards</h2>'+
+    '<p class="lead" id="cardsLead">Every candidate competing for this edition\'s Radar.</p>'+
+    '<div class="controls"><div class="field"><label>Month</label>'+
+      '<input type="month" id="cMonth" value="'+esc(state.edition)+'" min="'+esc(oldest)+'" max="'+esc(newest)+'"></div></div>'+
+    '<div id="cardsMount"><div class="loading">Loading cards…</div></div>';
+  el('cMonth').addEventListener('change', function(e){ if(e.target.value){ state.edition=e.target.value; state.cardsData=null; loadCards(); } });
+  if(state.cardsData && state.cardsData.edition===state.edition) renderCardsGrid(); else loadCards();
+}
+function loadCards(){
+  getJSON('/api/cards.json?edition='+encodeURIComponent(state.edition)).then(function(d){ state.cardsData=d; renderCardsGrid(); });
+}
+function cardTile(it){
+  var g=area(it.areaSlug);
+  var media = it.image ? '<img src="'+esc(it.image)+'" loading="lazy" alt="" onerror="this.style.display=\'none\'">' : '<div class="ph"></div>';
+  var meta = '<span>★ '+it.rating+'</span><span>'+it.votes+' vote'+(it.votes===1?'':'s')+'</span>'+(it.winrate!=null?'<span>'+it.winrate+'% win</span>':'');
+  return '<button class="tile" data-key="'+esc(it.key)+'">'+
+    '<div class="tile-media" style="background:'+g.g+'">'+media+
+      '<span class="rankbadge'+(it.inCut?' cut':'')+'">#'+it.rank+'</span>'+
+      '<span class="tile-area" style="background:'+g.c+'">'+esc(it.areaLabel)+'</span></div>'+
+    '<div class="tile-body"><span class="kicker">'+esc(it.type)+(it.source?' · '+esc(it.source):'')+'</span>'+
+      '<h4>'+esc(it.title)+'</h4><div class="tile-meta">'+meta+'</div></div></button>';
+}
+function renderCardsGrid(){
+  var d=state.cardsData, mount=el('cardsMount'); if(!mount) return;
+  var lead=el('cardsLead');
+  if(!d || !d.items.length){ mount.innerHTML='<div class="panel"><p class="muted">No cards in this edition yet.</p></div>'; if(lead) lead.textContent='No candidates in this edition yet.'; return; }
+  var cur=(state.editions.find(function(e){return e.edition===d.edition;})||{}).current;
+  if(lead) lead.innerHTML='All '+d.total+' candidates for '+esc(d.label)+', ranked by the confidence-aware Radar score. The top '+d.cutSize+(cur?' currently make':' made')+' the cut. Tap any card for its provenance.';
+  var onRadar = d.items.filter(function(x){return x.inCut;});
+  var running = d.items.filter(function(x){return !x.inCut;});
+  var html='<div class="cardsec"><span class="kicker">📡 On the '+esc(d.label)+'</span><div class="tiles">'+onRadar.map(cardTile).join('')+'</div></div>';
+  if(running.length) html+='<div class="cardsec"><span class="kicker">⚔️ In the running</span><div class="tiles">'+running.map(cardTile).join('')+'</div></div>';
+  mount.innerHTML=html;
+  mount.querySelectorAll('[data-key]').forEach(function(b){ b.addEventListener('click', function(){
+    var k=b.getAttribute('data-key');
+    var it=d.items.filter(function(x){return x.key===k;})[0]; if(!it) return;
+    openCard({areaSlug:it.areaSlug,type:it.type,source:it.source,title:it.title,description:it.description,image:it.image,href:it.href,_rating:it.rating,_votes:it.votes,_winrate:it.winrate});
+  }); });
+}
+
+// ---- Methodology view (how the ranking works) ----
+function mStep(n,ico,title,body){
+  return '<div class="mstep"><div class="mnum">'+n+'</div><div style="font-size:20px;margin-bottom:6px">'+ico+'</div><h4>'+title+'</h4><p>'+body+'</p></div>';
+}
+function ciScenario(title,ok,inL,inW,outL,outW,note){
+  return '<div class="mtile" style="padding:18px 20px"><h4>'+(ok?'✅ ':'⚡ ')+title+'</h4>'+
+    '<div class="cirow"><span class="cilabel">#5</span><div class="citrack"><span class="ciband in" style="left:'+inL+'%;width:'+inW+'%">#5</span></div></div>'+
+    '<div class="cirow"><span class="cilabel">#6</span><div class="citrack"><span class="ciband out" style="left:'+outL+'%;width:'+outW+'%">#6</span></div></div>'+
+    '<p class="cinote">'+note+'</p></div>';
+}
+function renderMethodology(){
+  var ov=state.overview||{};
+  var votes = ov.totalVotes!=null? ('<b>'+Number(ov.totalVotes).toLocaleString()+'</b>') : 'thousands of';
+  var curators = ov.curators!=null? ('<b>'+ov.curators+'</b> curators') : '';
+  el('view').innerHTML =
+    '<h2 class="title">Methodology</h2>'+
+    '<p class="lead mlead">The Radar is decided by the <b>wisdom of the crowd</b>, not an editor. Here\'s how '+votes+' quick taps'+(curators?' from '+curators:'')+' become a monthly shortlist of the strongest signals — and why the ranking stays fair to every card, no matter when it entered the pool.</p>'+
+    '<div class="mflow">'+
+      mStep(1,'🛰️','Sources','Candidate cards are ingested from PL R&amp;D and the field — talks, papers, posts and signals. Anyone can add a source with a one-file PR.')+
+      '<span class="marrow">→</span>'+
+      mStep(2,'🗳️','Match-ups','Curators see two cards and tap the stronger one. The winner stays and faces a fresh challenger — king-of-the-hill.')+
+      '<span class="marrow">→</span>'+
+      mStep(3,'📈','Ranking','Every comparison feeds a model that scores each card <em>and</em> how confident we are of that score.')+
+      '<span class="marrow">→</span>'+
+      mStep(4,'📡','The cut','The top 5 by a conservative score become that month\'s Radar — once the crowd has actually decided.')+
+    '</div>'+
+    '<div class="msec"><h3>1 · The vote: king-of-the-hill</h3>'+
+      '<p>Pairwise choices are far more reliable than 1–5 star ratings: “is A stronger than B?” is easy and consistent, while absolute scores drift between people. Each winner stays on screen and meets a new challenger, so strong cards rack up comparisons fast.</p>'+
+      '<div class="mgrid">'+
+        '<div class="mtile"><div class="ico">👆</div><h4>One tap per match</h4><p>No forms, no scores — just pick the stronger signal. Two questions up front (role + interests) place your vote in a peer segment.</p></div>'+
+        '<div class="mtile"><div class="ico">🐢</div><h4>Speed guard</h4><p>Rapid-fire clicks (under ~1 second) are rejected and don\'t count. We want reads, not reflexes.</p></div>'+
+        '<div class="mtile"><div class="ico">🎯</div><h4>Even coverage</h4><p>Challengers are drawn least-seen-first, so votes spread across the whole pool instead of piling onto a few cards.</p></div>'+
+      '</div></div>'+
+    '<div class="msec"><h3>2 · From votes to strength</h3>'+
+      '<p>We model each card\'s latent strength so the chance one card beats another follows a logistic curve of their strength gap — the Bradley–Terry model, the statistical cousin of chess Elo.</p>'+
+      '<div class="mformula">P( <b>i</b> beats <b>j</b> ) &nbsp;=&nbsp; σ( strength<sub>i</sub> − strength<sub>j</sub> )</div>'+
+      '<div class="mgrid">'+
+        '<div class="mtile"><div class="ico">⚡</div><h4>Live Elo</h4><p>Each vote instantly nudges both cards\' ratings (K = 24). Beating a stronger card moves the needle more. This powers the instant leaderboard.</p></div>'+
+        '<div class="mtile"><div class="ico">🎓</div><h4>Confidence fit</h4><p>For the official cut we re-fit every card jointly from the whole vote history at once — order-independent — and get a standard error (uncertainty) per card.</p></div>'+
+      '</div></div>'+
+    '<div class="msec"><h3>3 · Why it\'s fair to newcomers</h3>'+
+      '<p>Sequential Elo quietly rewards cards that have been around longer and faced more opponents. To strip out that recency artifact, the published Radar ranks by a <b>conservative score</b> — rating minus uncertainty:</p>'+
+      '<div class="mformula">Radar score &nbsp;=&nbsp; rating &nbsp;−&nbsp; <b>z</b> × uncertainty</div>'+
+      '<p>A card only makes the cut if it\'s <em>confidently</em> good, not just luckily high on a handful of votes. A thinly-voted newcomer stays in the running all month and climbs as votes accumulate — it just isn\'t crowned until the crowd is sure.</p>'+
+    '</div>'+
+    '<div class="msec"><h3>4 · Is the cut settled?</h3>'+
+      '<p>The #5 and #6 cards decide the boundary. We compare their confidence intervals: if they no longer overlap, we\'re sure #5 really beats #6 and the cut is <b>settled</b>. If they overlap, the last spot is a <b>toss-up</b> — and more votes decide it.</p>'+
+      '<div class="mgrid">'+
+        ciScenario('Settled',true,48,44,4,36,'The intervals don\'t overlap — #5 confidently clears #6.')+
+        ciScenario('Toss-up',false,34,50,8,50,'The intervals overlap — the last Radar spot is still undecided.')+
+      '</div></div>'+
+    '<div class="msec"><h3>5 · Lenses &amp; segments</h3>'+
+      '<p>Beyond the general Radar, every vote is decomposed into the independent pull of each <b>angle</b>, <b>topic</b> and <b>format</b>, per segment (a conjoint-style part-worth model). That powers the peer “lens” on the Radar and the <a href="#data">Insights</a> view — what people <em>like you</em> rank highest, and where supply lags demand.</p>'+
+    '</div>'+
+    '<div class="msec"><p class="muted" style="font-size:13px">The raw votes are the single source of truth — every rating can be recomputed from scratch. It\'s all open source: <a href="https://github.com/lksbrssr/plrd-radar-curator" target="_blank" rel="noopener">read the code →</a></p></div>';
+}
+
 // ---- Modal ----
 function openCard(c){
   if(!c) return;
@@ -791,9 +937,11 @@ function render(){
   setActive();
   var r = route();
   if(r==='radar'){ if(state.radar) renderRadar(); else loadRadar(); }
+  else if(r==='cards'){ renderCards(); }
   else if(r==='data'){ renderData(); }
   else if(r==='vote'){ renderVote(); }
   else if(r==='sources'){ renderSources(); }
+  else if(r==='method'){ renderMethodology(); }
 }
 document.querySelectorAll('#nav button').forEach(function(b){
   b.addEventListener('click', function(){ location.hash = b.getAttribute('data-route'); });
