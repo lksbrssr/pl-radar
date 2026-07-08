@@ -4,7 +4,7 @@
  */
 import db from './index.js'
 import type { Card, Curator } from '../types.js'
-import { currentEdition } from '../config.js'
+import { currentEdition, activeEdition } from '../config.js'
 
 // ---------------------------------------------------------------------------
 // Curators
@@ -206,7 +206,7 @@ export function getActiveCards(): Card[] {
       `SELECT ${CARD_COLUMNS} FROM cards c
        WHERE c.active = 1 AND c.edition = ? ORDER BY c.id`,
     )
-    .all(currentEdition()) as Card[]
+    .all(activeEdition()) as Card[]
 }
 
 /** Every card (active and retired), highest-rated first — for the dashboard. */
@@ -257,7 +257,7 @@ export function pickChallenger(
        ORDER BY c.matches ASC, RANDOM()
        LIMIT 1`,
     )
-    .get(currentEdition(), excludeId) as Card | undefined
+    .get(activeEdition(), excludeId) as Card | undefined
 }
 
 /** Pick a fresh current-edition card excluding a set of ids (least-seen first). */
@@ -269,7 +269,7 @@ export function pickChallengerExcluding(excludeIds: number[]): Card | undefined 
       `SELECT * FROM cards WHERE active = 1 AND edition = ? ${notIn}
        ORDER BY matches ASC, RANDOM() LIMIT 1`,
     )
-    .get(currentEdition(), ...excludeIds) as Card | undefined
+    .get(activeEdition(), ...excludeIds) as Card | undefined
 }
 
 /** Distinct editions present, newest first, with counts. */

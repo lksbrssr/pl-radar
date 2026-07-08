@@ -42,6 +42,18 @@ export function currentEdition(): string {
   return new Date().toISOString().slice(0, 7)
 }
 
+/**
+ * The edition that is currently OPEN FOR VOTING. Defaults to the calendar month
+ * (`currentEdition()`), but can be pinned via the `ACTIVE_EDITION` env var
+ * (YYYY-MM) — e.g. keep the crowd voting on June while July's pool is still
+ * filling up. Everything vote-related keys off this: the votable pool, challenger
+ * selection, and vote validation.
+ */
+export function activeEdition(): string {
+  const pinned = (process.env.ACTIVE_EDITION || '').trim()
+  return /^\d{4}-\d{2}$/.test(pinned) ? pinned : currentEdition()
+}
+
 /** Human label for an edition, e.g. "2026-07" -> "July Radar". */
 export function editionLabel(edition: string): string {
   const [y, m] = edition.split('-').map(Number)

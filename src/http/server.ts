@@ -43,7 +43,7 @@ import {
   coverageGaps,
 } from '../ranking/strength.js'
 import { renderDashboard } from './dashboard.js'
-import { currentEdition, editionLabel } from '../config.js'
+import { currentEdition, activeEdition, editionLabel } from '../config.js'
 import { SOURCES } from '../ingest/sources/index.js'
 import { activeCardCountByKeyPrefix } from '../ingest/stats.js'
 
@@ -309,7 +309,7 @@ export function createServer() {
     if (!winner || !loser || winner.id === loser.id) {
       return res.status(400).json({ error: 'bad pair' })
     }
-    const cur = currentEdition()
+    const cur = activeEdition()
     if (winner.edition !== cur || loser.edition !== cur || !winner.active || !loser.active) {
       return res.status(400).json({ error: 'not votable this edition' })
     }
