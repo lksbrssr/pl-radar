@@ -185,8 +185,22 @@ export function renderDashboard(): string {
   @media(max-width:640px){.vsplit{grid-template-columns:1fr;}}
   .vcard{border:1px solid var(--line);background:var(--white);border-radius:16px;overflow:hidden;
     cursor:pointer;text-align:left;color:inherit;font-family:inherit;padding:0;width:100%;
-    display:flex;flex-direction:column;transition:transform .12s,box-shadow .12s,border-color .12s;}
+    display:flex;flex-direction:column;
+    transition:transform .22s ease,box-shadow .22s,border-color .22s,opacity .24s ease;}
   .vcard:hover{transform:translateY(-3px);box-shadow:0 12px 28px rgba(19,19,22,.12);border-color:var(--muted);}
+  .vcard.leaving{opacity:0;transform:translateY(10px) scale(.965);pointer-events:none;}
+  .vcard.entering{opacity:0;transform:translateY(10px) scale(.98);}
+  .vcard.won{box-shadow:0 0 0 2px var(--blue);}
+  /* voting progress + slow-down warning */
+  .vprogress{background:var(--gray-50);border:1px solid var(--line);border-radius:14px;padding:13px 16px;margin:2px 0 14px;}
+  .vprogress .row{display:flex;justify-content:space-between;align-items:baseline;font-size:13px;margin-bottom:8px;}
+  .vprogress .track{height:10px;background:var(--gray-200);border-radius:999px;overflow:hidden;}
+  .vprogress .fillp{height:100%;width:0;border-radius:999px;transition:width .5s ease;
+    background:linear-gradient(90deg,#3966FE,#12bfdf);}
+  .vwarn{background:#fdf0c8;color:#8a6d00;border-radius:10px;padding:10px 14px;font-size:13px;
+    margin-bottom:12px;display:none;}
+  .vwarn.show{display:block;}
+  html.dark .vwarn{background:#3a2f12;color:#f5c451;}
   .vcard .vmedia{position:relative;aspect-ratio:16/9;}
   .vcard .vmedia img,.vcard .vmedia .ph{width:100%;height:100%;object-fit:cover;display:block;}
   .vcard .varea{position:absolute;left:10px;bottom:10px;color:#fff;font-size:10px;font-weight:600;
@@ -483,45 +497,81 @@ function renderVoteOnboarding(){
 function challenger(excludeCsv){
   return getJSON('/api/vote/challenger'+(excludeCsv?('?exclude='+encodeURIComponent(excludeCsv)):'')).then(function(r){ return r.card; });
 }
-function voteCardHtml(slot, card, reigning){
+function voteCardHtml(slot, card, reigning, entering){
   var g=area(card.areaSlug);
   var media = card.image ? '<img src="'+esc(card.image)+'" alt="" onerror="this.style.display=\'none\'">' : '<div class="ph"></div>';
-  return '<button class="vcard" data-slot="'+slot+'">'+
+  return '<button class="vcard'+(entering?' entering':'')+'" data-slot="'+slot+'">'+
     '<div class="vmedia" style="background:'+g.g+'">'+media+'<span class="varea" style="background:'+g.c+'">'+esc(card.areaLabel)+'</span></div>'+
     '<div class="vbody">'+(reigning?'<span class="reign">✓ your pick</span>':'')+
       '<span class="kicker">'+esc(card.type)+(card.source?' · '+esc(card.source):'')+'</span>'+
       '<h4>'+esc(card.title)+'</h4>'+(card.description?'<p>'+esc(card.description)+'</p>':'')+
     '</div></button>';
 }
+var warnT=null;
+function showWarn(){ var w=el('vwarn'); if(!w) return; w.classList.add('show'); clearTimeout(warnT); warnT=setTimeout(function(){ w.classList.remove('show'); }, 2600); }
+function updateStats(s){
+  var p=el('vprog'); if(!p||!s) return; p.style.display='block';
+  var pct = s.topVotes ? Math.max(6, Math.round(s.votes/s.topVotes*100)) : 6;
+  el('vprogFill').style.width=pct+'%';
+  var rank = s.rank===1 && s.votes>0 ? '🏆 you\'re the top curator!' : (s.rank?('#'+s.rank+' of '+s.of+' curators'):(s.of+' curators'));
+  el('vprogLabel').textContent = s.votes+' vote'+(s.votes===1?'':'s')+' · '+rank;
+}
+function paintSlot(slot, card, reigning, entering){
+  var host=el('slot'+slot.toUpperCase()); if(!host) return;
+  host.innerHTML = voteCardHtml(slot, card, reigning, entering);
+  var btn=host.querySelector('[data-slot]');
+  btn.addEventListener('click', function(){ pick(slot); });
+  if(entering){ requestAnimationFrame(function(){ requestAnimationFrame(function(){ btn.classList.remove('entering'); }); }); }
+}
+function delay(ms){ return new Promise(function(r){ setTimeout(r,ms); }); }
 function renderVoteSession(){
   el('view').innerHTML =
     '<h2 class="title">Vote</h2>'+
-    '<p class="lead" id="vLead">Tap the stronger signal for the Radar. Your pick stays and faces a new challenger.</p>'+
+    '<p class="lead">Tap the stronger signal for the Radar. Your pick stays and faces a new challenger.</p>'+
+    '<div class="vprogress" id="vprog" style="display:none">'+
+      '<div class="row"><span id="vprogLabel"></span><span class="muted">vs. the top curator</span></div>'+
+      '<div class="track"><div class="fillp" id="vprogFill"></div></div></div>'+
+    '<div class="vwarn" id="vwarn">Whoa — take a moment to actually read them 🙂 Fast-clicking doesn\'t count.</div>'+
     '<p class="vversus">🅰 &nbsp; vs &nbsp; 🅱</p>'+
-    '<div class="vsplit" id="vsplit"><div class="loading">Loading match-up…</div></div>'+
-    '<div class="votefoot"><span id="vCount"></span><button id="vReset">Change interests</button>'+
+    '<div class="vsplit" id="vsplit"><div id="slotA"><div class="loading">Loading match-up…</div></div><div id="slotB"></div></div>'+
+    '<div class="votefoot"><button id="vReset">Change interests</button>'+
       '<a href="https://t.me/lksbrssr_radar_bot" target="_blank">Vote in Telegram instead</a></div>';
   el('vReset').addEventListener('click', function(){ web=null; saveWeb(); localStorage.removeItem('radar-web'); renderVote(); });
-  vs={a:null,b:null,champ:null,count:0,busy:false};
-  challenger('').then(function(a){ vs.a=a; return challenger(''+a.id); }).then(function(b){ vs.b=b; paintPair(); });
-}
-function paintPair(){
-  var host=el('vsplit'); if(!host) return;
-  host.innerHTML = voteCardHtml('a', vs.a, vs.champ==='a') + voteCardHtml('b', vs.b, vs.champ==='b');
-  host.querySelectorAll('[data-slot]').forEach(function(btn){ btn.addEventListener('click', function(){ pick(btn.getAttribute('data-slot')); }); });
-  var c=el('vCount'); if(c) c.textContent = vs.count ? (vs.count+' vote'+(vs.count===1?'':'s')+' cast — thank you!') : '';
+  vs={a:null,b:null,champ:null,count:0,busy:false,lastTs:0};
+  if(web&&web.token){ getJSON('/api/vote/me?token='+encodeURIComponent(web.token)).then(function(r){ updateStats(r.stats); }); }
+  challenger('').then(function(a){ vs.a=a; return challenger(''+a.id); }).then(function(b){
+    vs.b=b; paintSlot('a', vs.a, false, false); paintSlot('b', vs.b, false, false);
+  });
 }
 function pick(slot){
-  if(!vs || vs.busy) return; vs.busy=true;
+  if(!vs || vs.busy) return;
+  var now=Date.now();
+  if(vs.lastTs && now-vs.lastTs < 1200) showWarn();
+  vs.busy=true;
   var winner = slot==='a'?vs.a:vs.b; var loser = slot==='a'?vs.b:vs.a;
-  fetch('/api/vote',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:web.token,winnerId:winner.id,loserId:loser.id})})
-    .then(function(r){return r.json();}).then(function(){
-      vs.count++; vs.champ=slot;
-      // Winner stays in its slot; a fresh challenger (excluding BOTH current
-      // cards) fills the other slot.
-      return challenger(winner.id+','+loser.id).then(function(nc){ if(slot==='a'){ vs.b=nc; } else { vs.a=nc; } });
-    }).then(function(){ vs.busy=false; paintPair(); })
-    .catch(function(){ vs.busy=false; });
+  var loserSlot = slot==='a'?'b':'a';
+  var winCard=el('slot'+slot.toUpperCase()).querySelector('.vcard');
+  var loseCard=el('slot'+loserSlot.toUpperCase()).querySelector('.vcard');
+  if(winCard) winCard.classList.add('won');
+  if(loseCard) loseCard.classList.add('leaving');
+  Promise.all([
+    fetch('/api/vote',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:web.token,winnerId:winner.id,loserId:loser.id})}).then(function(r){return r.json();}),
+    challenger(winner.id+','+loser.id),
+    delay(300)
+  ]).then(function(arr){
+    var res=arr[0], nc=arr[1];
+    if(res && res.tooFast){ // server rejected as too fast — revert, don't count
+      if(loseCard) loseCard.classList.remove('leaving');
+      if(winCard) winCard.classList.remove('won');
+      showWarn(); if(res.stats) updateStats(res.stats); vs.busy=false; return;
+    }
+    vs.lastTs=now; vs.count++; vs.champ=slot;
+    if(slot==='a'){ vs.b=nc; } else { vs.a=nc; }
+    paintSlot(loserSlot, nc, false, true);   // fresh challenger animates in
+    paintSlot(slot, winner, true, false);     // winner stays, now marked 'your pick'
+    if(res && res.stats) updateStats(res.stats);
+    vs.busy=false;
+  }).catch(function(){ if(loseCard) loseCard.classList.remove('leaving'); if(winCard) winCard.classList.remove('won'); vs.busy=false; });
 }
 
 // ---- Modal ----

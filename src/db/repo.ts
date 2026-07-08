@@ -385,3 +385,31 @@ export function totalVotes(): number {
   return (db.prepare('SELECT COUNT(*) AS n FROM votes').get() as { n: number })
     .n
 }
+
+/**
+ * A voter's standing among all curators, for the "top curator" progress bar:
+ * their vote count, rank (1 = most votes), the field size, and the leader's
+ * count (the bar's 100%).
+ */
+export function voterStats(curatorId: number) {
+  const votes = (
+    db
+      .prepare('SELECT COUNT(*) AS n FROM votes WHERE curator_id = ?')
+      .get(curatorId) as { n: number }
+  ).n
+  const topVotes = (
+    db
+      .prepare(
+        'SELECT COALESCE(MAX(c),0) AS m FROM (SELECT COUNT(*) c FROM votes GROUP BY curator_id)',
+      )
+      .get() as { m: number }
+  ).m
+  const higher = (
+    db
+      .prepare(
+        'SELECT COUNT(*) AS n FROM (SELECT curator_id, COUNT(*) c FROM votes GROUP BY curator_id) WHERE c > ?',
+      )
+      .get(votes) as { n: number }
+  ).n
+  return { votes, rank: higher + 1, of: countCurators(), topVotes }
+}

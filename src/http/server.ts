@@ -73,6 +73,11 @@ function parseProfile(q: Record<string, unknown>): Profile {
   return p
 }
 
+/** Minimum ms between two votes from the same voter (anti-spam guard). */
+const MIN_VOTE_MS = 900
+/** In-memory last-vote timestamps (process-local; fine for a single machine). */
+const lastVoteAt = new Map<number, number>()
+
 /** Minimal card shape for the in-browser voting UI. */
 function toVoteCard(c: Card) {
   return {
@@ -170,11 +175,29 @@ export function createServer() {
     res.json({ card: toVoteCard(card) })
   })
 
+  // A voter's standing (for the "top curator" progress bar).
+  app.get('/api/vote/me', (req, res) => {
+    const token = req.query.token
+    const curator = typeof token === 'string' ? repo.getCuratorByToken(token) : undefined
+    if (!curator) return res.json({ stats: { votes: 0, rank: 0, of: repo.countCurators(), topVotes: 0 } })
+    res.json({ stats: repo.voterStats(curator.id) })
+  })
+
   // Record one pairwise web vote (winner beat loser) + update Elo.
+  // A too-fast vote (< MIN_VOTE_MS since this voter's previous one) is rejected
+  // as "tooFast" and NOT counted — a server-side guard so the client-side
+  // slow-down nudge can't be bypassed by scripting.
   app.post('/api/vote', (req, res) => {
     const { token, winnerId, loserId } = req.body ?? {}
     const curator = typeof token === 'string' ? repo.getCuratorByToken(token) : undefined
     if (!curator) return res.status(401).json({ error: 'unknown voter' })
+
+    const now = Date.now()
+    const last = lastVoteAt.get(curator.id)
+    if (last && now - last < MIN_VOTE_MS) {
+      return res.json({ ok: false, tooFast: true, stats: repo.voterStats(curator.id) })
+    }
+
     const winner = getCard(Number(winnerId))
     const loser = getCard(Number(loserId))
     if (!winner || !loser || winner.id === loser.id) {
@@ -194,7 +217,8 @@ export function createServer() {
       newLoserRating: rated.loser,
     })
     repo.touchCurator(curator.id)
-    res.json({ ok: true })
+    lastVoteAt.set(curator.id, now)
+    res.json({ ok: true, stats: repo.voterStats(curator.id) })
   })
 
   // Everything the Data view needs, in one call.
