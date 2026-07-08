@@ -12,6 +12,7 @@
     "start": "tsx src/index.ts",
     "build": "tsc -p tsconfig.json && cp src/db/schema.sql dist/db/schema.sql",
     "seed": "tsx src/seed/run.ts",
+    "ingest": "tsx src/ingest/run.ts",
     "simulate": "tsx src/dev/simulate.ts",
     "dev:serve": "tsx src/dev/serve.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json"
