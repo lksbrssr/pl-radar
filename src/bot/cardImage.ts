@@ -43,6 +43,7 @@ const AREA_GRADIENT: Record<string, { from: string; via: string; to: string }> =
   'economies-governance': { from: '#0a3b2e', via: '#0f6b4c', to: '#12bfdf' },
   'ai-robotics': { from: '#2a1b4d', via: '#4834c4', to: '#7b6cf6' },
   neurotech: { from: '#141a52', via: '#2340c9', to: '#5b7bff' },
+  'protocol-labs': { from: '#12151c', via: '#243043', to: '#5b6b86' },
   default: { from: '#0d0f13', via: '#1d2b5c', to: '#1982F4' },
 }
 

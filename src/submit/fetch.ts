@@ -14,6 +14,8 @@ export type PageMeta = {
   description: string
   image: string | null
   siteName: string | null
+  /** Publication date from meta tags (article:published_time etc.), or null. */
+  publishedAt: string | null
   /** Plain-text body excerpt (tags stripped, capped). */
   text: string
 }
@@ -100,6 +102,13 @@ export async function fetchPageMeta(url: string): Promise<PageMeta> {
     ''
   const image = meta(html, 'og:image') || meta(html, 'twitter:image') || null
   const siteName = meta(html, 'og:site_name')
+  const publishedAt =
+    meta(html, 'article:published_time') ||
+    meta(html, 'og:article:published_time') ||
+    meta(html, 'article:modified_time') ||
+    meta(html, 'og:updated_time') ||
+    meta(html, 'date') ||
+    (html.match(/<time[^>]+datetime=["']([^"']+)["']/i)?.[1] ?? null)
 
   return {
     url,
@@ -108,6 +117,7 @@ export async function fetchPageMeta(url: string): Promise<PageMeta> {
     description,
     image: image ? decode(image) : null,
     siteName,
+    publishedAt: publishedAt ? decode(publishedAt) : null,
     text: bodyText(html),
   }
 }
