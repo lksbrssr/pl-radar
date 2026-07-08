@@ -551,19 +551,34 @@ function renderRadar(){
   var oldest = eds.length ? eds[eds.length-1].edition : state.edition;
   var newest = eds.length ? eds[0].edition : state.edition;
   var curEd = eds.find(function(e){return e.edition===state.edition;})||{};
+  // DRAFT: peer-set lens filter (role + interests). Kept on this branch only.
+  var roleOpts = '<option value="">Any role</option>'+state.overview.lenses.roles.map(function(r){ return '<option value="'+r.key+'"'+(r.key===state.role?' selected':'')+'>'+esc(r.emoji+' '+r.label)+'</option>'; }).join('');
+  var focusChipsHtml = state.overview.lenses.areas.map(function(a){ var on=state.focus.indexOf(a.slug)>=0; return '<button class="lchip'+(on?' on':'')+'" data-focus="'+a.slug+'">'+(on?'✓ ':'')+areaIcon(a.slug)+esc(a.label)+'</button>'; }).join('');
   v.innerHTML =
-    '<h2 class="title">Radar</h2>'+
-    '<p class="lead">A one-minute swipe through the strongest signals across PL R&amp;D, as chosen by the crowd.</p>'+
+    '<h2 class="title">'+esc(lensActive()?lensLabel():'Radar')+'</h2>'+
+    '<p class="lead">The '+esc((state.radar&&state.radar.label)||'')+' as chosen by the crowd'+esc(lensSubtitle())+'</p>'+
     '<div class="controls">'+
       '<div class="field"><label>Month</label><input type="month" id="selMonth" value="'+esc(state.edition)+'" min="'+esc(oldest)+'" max="'+esc(newest)+'"></div>'+
+      '<div class="field"><label>Your role</label><select id="selRole">'+roleOpts+'</select></div>'+
     '</div>'+
-    '<div class="soon"><span class="soon-ic">🔒</span><div><b>Coming soon</b> — filter the Radar for what people with a given profile (role &amp; interests) surfaced.</div></div>'+
+    '<div class="lenspanel">'+
+      '<div class="lenshead"><span class="field"><label>Your interests</label></span>'+
+        (lensActive()?'<button class="lreset" id="lreset">Reset to all curators</button>':'')+'</div>'+
+      '<div class="lchips">'+focusChipsHtml+'</div>'+
+    '</div>'+
     cutToggle()+
     '<div id="radarMount"></div>'+
     '<p class="lead" style="margin-top:14px">Showing the top '+((state.radar&&state.radar.items.length)||0)+' of '+((state.radar&&state.radar.poolSize)||0)+' candidates'+(curEd.current?' still in the running this month.':' from that edition.')+'</p>'+
     cutNote();
   el('selMonth').addEventListener('change', function(e){ if(e.target.value){ state.edition=e.target.value; loadRadar(); } });
+  el('selRole').addEventListener('change', function(e){ state.role=e.target.value; saveLens(); loadRadar(); });
+  var lr=el('lreset'); if(lr) lr.addEventListener('click', function(){ state.role=''; state.focus=[]; saveLens(); loadRadar(); });
   v.querySelectorAll('[data-cut]').forEach(function(b){ b.addEventListener('click', function(){ state.radarCut=b.getAttribute('data-cut'); applyRadarCut(); renderRadar(); }); });
+  v.querySelectorAll('[data-focus]').forEach(function(b){ b.addEventListener('click', function(){
+    var s=b.getAttribute('data-focus'); var i=state.focus.indexOf(s);
+    if(i>=0) state.focus.splice(i,1); else state.focus.push(s);
+    saveLens(); loadRadar();
+  }); });
   mountCarousel();
 }
 
