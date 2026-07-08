@@ -14,6 +14,9 @@ default ingestion only accepts an allowlist of editions (currently **June & July
   `plrd.org/insights` (RSS backbone, header images scraped from the listing).
 - **`protocol-ai-blog`** — announcements & essays from `protocol.ai/blog`
   (`protocol.ai/rss.xml`, header images via RSS `<enclosure>`).
+- **`plneuro`** — talks, interviews & posts from the PL neurotech program
+  (`plneuro.xyz/feed/`). No feed images yet; can cross-post talks that also come
+  via `plrd-insights`, so it may produce duplicates until dedup lands.
 
 ## Run it
 
