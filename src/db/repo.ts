@@ -494,11 +494,12 @@ export const upsertContent = db.transaction((c: ContentUpsert): number => {
     // This source owns the canonical scalar fields iff its rank is <= the
     // current owner's (<= so re-ingesting the same source refreshes fields).
     const wins = sourceRank(c.sourceKey) <= sourceRank(existing.canonical_source_key ?? '')
-    // Best-of description = longest non-empty.
-    const desc =
-      (c.description?.length ?? 0) > (existing.description?.length ?? 0)
-        ? c.description ?? existing.description
-        : existing.description
+    // Description follows the canonical (highest-precedence) source, so a wordy
+    // cross-post can't override the primary publisher's clean summary. Fill from
+    // any source only when we still have none.
+    let desc = existing.description
+    if (wins && c.description) desc = c.description
+    else if (!desc && c.description) desc = c.description
     // Image: the primary's if present; else fill a missing image from any source.
     let image = existing.image
     if (wins && c.image) image = c.image

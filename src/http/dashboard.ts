@@ -134,6 +134,11 @@ export function renderDashboard(): string {
   .cuttoggle .ctbtn.on{background:var(--ink);color:var(--white);}
   .cuttoggle .ctbtn:not(.on):hover{color:var(--ink);}
   .cuthint{font-size:12px;color:var(--muted);margin:-6px 0 12px;}
+  .cutrow{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:2px 0 0;}
+  .cutrow .cuttoggle{margin:0;}
+  .methlink{font-size:12.5px;font-weight:600;color:#3966FE;white-space:nowrap;}
+  html.dark .methlink{color:#6f93ff;}
+  .methlink:hover{text-decoration:underline;}
   /* carousel (recycled from plrd.org PLRadar) */
   .radar{border:1px solid var(--line);border-radius:18px;overflow:hidden;background:var(--white);
     box-shadow:0 8px 30px rgba(15,17,21,.06);}
@@ -147,7 +152,7 @@ export function renderDashboard(): string {
   .slide.on{opacity:1;pointer-events:auto;transform:none;}
   @media(max-width:640px){.slide{grid-template-columns:1fr;}}
   .visual{position:relative;overflow:hidden;min-height:200px;}
-  .visual img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;}
+  .visual img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;object-position:center;}
   .visual .tex{position:absolute;inset:0;opacity:.10;
     background-image:radial-gradient(circle at 30% 40%,#fff 1px,transparent 1px),radial-gradient(circle at 70% 65%,#fff 1px,transparent 1px);
     background-size:26px 26px,34px 34px;}
@@ -650,9 +655,12 @@ function cutToggle(){
   var r=state.radar;
   if(lensActive() || !r || !r.balancedItems || !r.scoreItems || r.scoreItems.length<2) return '';
   var bal = state.radarCut!=='score';
-  return '<div class="cuttoggle">'+
-      '<button class="ctbtn'+(bal?' on':'')+'" data-cut="balanced">⚖️ Balanced</button>'+
-      '<button class="ctbtn'+(bal?'':' on')+'" data-cut="score">🏅 By score</button>'+
+  return '<div class="cutrow">'+
+      '<div class="cuttoggle">'+
+        '<button class="ctbtn'+(bal?' on':'')+'" data-cut="balanced">Balanced</button>'+
+        '<button class="ctbtn'+(bal?'':' on')+'" data-cut="score">By score</button>'+
+      '</div>'+
+      '<a class="methlink" href="#method">Learn more about the methodology →</a>'+
     '</div>'+
     '<p class="cuthint">'+(bal
       ? 'A spread across focus areas &amp; angles — strong <em>and</em> balanced.'
