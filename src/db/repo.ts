@@ -5,6 +5,7 @@
 import db from './index.js'
 import type { Card, Curator } from '../types.js'
 import { currentEdition, activeEdition } from '../config.js'
+import { sourceRank } from '../ingest/identity.js'
 
 // ---------------------------------------------------------------------------
 // Curators
@@ -386,6 +387,175 @@ export function setCardAngles(
   })
   tx()
 }
+
+// ---------------------------------------------------------------------------
+// Content layer (deterministic dedup)
+// ---------------------------------------------------------------------------
+
+export type ContentUpsert = {
+  identityKey: string
+  identityKind: 'youtube' | 'url'
+  sourceKey: string
+  title: string
+  url: string
+  description?: string | null
+  image?: string | null
+  areaSlug: string
+  areaLabel: string
+  type: string
+  source?: string | null
+  sourceKind?: 'internal' | 'field'
+  publishedAt?: string | null
+  edition: string
+}
+
+/**
+ * Upsert a content by `identity_key` and record source provenance. Applies
+ * source precedence (the highest-precedence source owns the canonical scalar
+ * fields) and best-of merges (longest description; the primary's image, else any
+ * non-null). Idempotent. Returns the content id.
+ */
+export const upsertContent = db.transaction((c: ContentUpsert): number => {
+  const existing = db
+    .prepare(
+      `SELECT id, canonical_source_key, description, image FROM content WHERE identity_key = ?`,
+    )
+    .get(c.identityKey) as
+    | { id: number; canonical_source_key: string | null; description: string | null; image: string | null }
+    | undefined
+
+  let contentId: number
+  if (!existing) {
+    contentId = Number(
+      db
+        .prepare(
+          `INSERT INTO content
+             (identity_key, identity_kind, canonical_source_key, canonical_title,
+              canonical_url, description, image, area_slug, area_label, type,
+              source, source_kind, published_at, edition)
+           VALUES (@identity_key,@identity_kind,@canonical_source_key,@canonical_title,
+              @canonical_url,@description,@image,@area_slug,@area_label,@type,
+              @source,@source_kind,@published_at,@edition)`,
+        )
+        .run({
+          identity_key: c.identityKey,
+          identity_kind: c.identityKind,
+          canonical_source_key: c.sourceKey,
+          canonical_title: c.title,
+          canonical_url: c.url,
+          description: c.description ?? null,
+          image: c.image ?? null,
+          area_slug: c.areaSlug,
+          area_label: c.areaLabel,
+          type: c.type,
+          source: c.source ?? null,
+          source_kind: c.sourceKind ?? 'internal',
+          published_at: c.publishedAt ?? null,
+          edition: c.edition,
+        }).lastInsertRowid,
+    )
+  } else {
+    contentId = existing.id
+    // This source owns the canonical scalar fields iff its rank is <= the
+    // current owner's (<= so re-ingesting the same source refreshes fields).
+    const wins = sourceRank(c.sourceKey) <= sourceRank(existing.canonical_source_key ?? '')
+    // Best-of description = longest non-empty.
+    const desc =
+      (c.description?.length ?? 0) > (existing.description?.length ?? 0)
+        ? c.description ?? existing.description
+        : existing.description
+    // Image: the primary's if present; else fill a missing image from any source.
+    let image = existing.image
+    if (wins && c.image) image = c.image
+    else if (!image && c.image) image = c.image ?? null
+
+    if (wins) {
+      db.prepare(
+        `UPDATE content SET
+           canonical_source_key=@sk, canonical_title=@title, canonical_url=@url,
+           area_slug=@area, area_label=@areaLabel, type=@type, source=@source,
+           source_kind=@sourceKind, published_at=@pub, edition=@edition,
+           description=@desc, image=@image
+         WHERE id=@id`,
+      ).run({
+        sk: c.sourceKey, title: c.title, url: c.url, area: c.areaSlug,
+        areaLabel: c.areaLabel, type: c.type, source: c.source ?? null,
+        sourceKind: c.sourceKind ?? 'internal', pub: c.publishedAt ?? null,
+        edition: c.edition, desc, image, id: contentId,
+      })
+    } else {
+      db.prepare(`UPDATE content SET description=@desc, image=@image WHERE id=@id`).run({
+        desc, image, id: contentId,
+      })
+    }
+  }
+
+  db.prepare(
+    `INSERT INTO content_sources
+       (content_id, source_key, source_url, source_title, source_description, source_image)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(source_key, source_url) DO UPDATE SET
+       source_title=excluded.source_title,
+       source_description=excluded.source_description,
+       source_image=excluded.source_image`,
+  ).run(contentId, c.sourceKey, c.url, c.title, c.description ?? null, c.image ?? null)
+
+  return contentId
+})
+
+/**
+ * Ensure exactly ONE card exists for a content, keyed by `preferredKey` on first
+ * creation. Syncs the card's display fields from the content's canonical values;
+ * never changes an existing card's key (keeps upserts idempotent + vote FKs
+ * intact). Returns whether it created a new card.
+ */
+export const upsertCardForContent = db.transaction(
+  (contentId: number, preferredKey: string): { created: boolean; cardId: number } => {
+    const content = db.prepare(`SELECT * FROM content WHERE id = ?`).get(contentId) as {
+      canonical_title: string; canonical_url: string; description: string | null
+      image: string | null; area_slug: string; area_label: string; type: string
+      source: string | null; source_kind: string | null; edition: string | null
+    }
+    const external = content.source_kind === 'field' ? 1 : 0
+    const fields = {
+      title: content.canonical_title,
+      description: content.description,
+      href: content.canonical_url,
+      source: content.source,
+      source_kind: content.source_kind ?? 'internal',
+      type: content.type,
+      area_slug: content.area_slug,
+      area_label: content.area_label,
+      edition: content.edition,
+      image: content.image,
+      external,
+    }
+    const existing = db
+      .prepare('SELECT id FROM cards WHERE content_id = ?')
+      .get(contentId) as { id: number } | undefined
+    if (existing) {
+      db.prepare(
+        `UPDATE cards SET title=@title, description=@description, href=@href,
+           source=@source, source_kind=@source_kind, type=@type, area_slug=@area_slug,
+           area_label=@area_label, edition=@edition, image=@image, external=@external
+         WHERE id=@id`,
+      ).run({ ...fields, id: existing.id })
+      return { created: false, cardId: existing.id }
+    }
+    const cardId = Number(
+      db
+        .prepare(
+          `INSERT INTO cards
+             (key, title, description, href, source, source_kind, type,
+              area_slug, area_label, edition, image, external, content_id)
+           VALUES (@key,@title,@description,@href,@source,@source_kind,@type,
+              @area_slug,@area_label,@edition,@image,@external,@content_id)`,
+        )
+        .run({ ...fields, key: preferredKey, content_id: contentId }).lastInsertRowid,
+    )
+    return { created: true, cardId }
+  },
+)
 
 // ---------------------------------------------------------------------------
 // Rounds & votes

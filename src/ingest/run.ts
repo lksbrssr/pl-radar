@@ -20,7 +20,8 @@
  */
 import { SOURCES } from './sources/index.js'
 import type { Candidate } from './types.js'
-import { upsertCard, getActiveCards } from '../db/repo.js'
+import { upsertContent, upsertCardForContent, getActiveCards } from '../db/repo.js'
+import { contentIdentity } from './identity.js'
 
 /** Editions we ingest by default. June & July 2026 for the initial rollout. */
 const DEFAULT_EDITIONS = ['2026-06', '2026-07']
@@ -63,9 +64,13 @@ async function main() {
   )
 
   let total = 0
+  let deduped = 0
   let skippedEdition = 0
   let undated = 0
   const perEdition = new Map<string, number>()
+  // For --dry, track identities across the run so cross-posts are reflected in
+  // the preview counts (real ingest dedups via the DB content layer).
+  const seenIdentities = new Set<string>()
 
   for (const source of sources) {
     process.stdout.write(`\n• ${source.name} (${source.key})… `)
@@ -93,26 +98,46 @@ async function main() {
     console.log(`${candidates.length} found, ${kept.length} in scope`)
 
     for (const { c, edition } of kept) {
+      const identity = contentIdentity(c)
       const img = c.image ? ' 🖼' : ''
-      console.log(`    ${edition} [${c.type}·${c.areaSlug}]${img} ${c.title.slice(0, 66)}`)
-      if (!DRY) {
-        upsertCard({
-          key: c.key,
-          title: c.title,
-          description: c.description ?? null,
-          href: c.href,
-          source: c.source,
-          source_kind: c.sourceKind,
-          type: c.type,
-          area_slug: c.areaSlug,
-          area_label: c.areaLabel,
-          edition,
-          image: c.image ?? null,
-          external: c.sourceKind === 'field',
-        })
+      if (DRY) {
+        const dup = seenIdentities.has(identity.key)
+        if (!dup) seenIdentities.add(identity.key)
+        const tag = dup ? ' ↻ dedup' : ''
+        console.log(`    ${edition} [${c.type}·${c.areaSlug}]${img}${tag} {${identity.key}} ${c.title.slice(0, 44)}`)
+        if (dup) {
+          deduped++
+        } else {
+          perEdition.set(edition, (perEdition.get(edition) ?? 0) + 1)
+          total++
+        }
+        continue
       }
-      perEdition.set(edition, (perEdition.get(edition) ?? 0) + 1)
-      total++
+      const contentId = upsertContent({
+        identityKey: identity.key,
+        identityKind: identity.kind,
+        sourceKey: source.key,
+        title: c.title,
+        url: c.href,
+        description: c.description ?? null,
+        image: c.image ?? null,
+        areaSlug: c.areaSlug,
+        areaLabel: c.areaLabel,
+        type: c.type,
+        source: c.source,
+        sourceKind: c.sourceKind,
+        publishedAt: c.publishedAt ?? null,
+        edition,
+      })
+      const { created } = upsertCardForContent(contentId, c.key)
+      const tag = created ? '' : ' ↻ dedup'
+      console.log(`    ${edition} [${c.type}·${c.areaSlug}]${img}${tag} ${c.title.slice(0, 60)}`)
+      if (created) {
+        perEdition.set(edition, (perEdition.get(edition) ?? 0) + 1)
+        total++
+      } else {
+        deduped++
+      }
     }
   }
 
@@ -123,8 +148,8 @@ async function main() {
   console.log(
     `\n${DRY ? 'Would ingest' : 'Ingested'} ${total} card(s)` +
       (byEdition ? ` (${byEdition})` : '') +
-      `. Skipped ${skippedEdition} out-of-scope, ${undated} undated.` +
-      (DRY ? '' : ` Pool now: ${getActiveCards().length} active (current edition).`),
+      `. ${deduped} cross-posted (deduped), ${skippedEdition} out-of-scope, ${undated} undated.` +
+      (DRY ? '' : ` Pool now: ${getActiveCards().length} active (active edition).`),
   )
 }
 

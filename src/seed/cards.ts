@@ -53,7 +53,9 @@ function c(
     key,
     title,
     description,
-    href: 'https://plrd.org/',
+    // Per-card demo URL so each seed card is a distinct content (a shared href
+    // would collapse them all into one content via URL identity).
+    href: `https://plrd.org/demo/${key}`,
     source,
     source_kind: kind,
     type,

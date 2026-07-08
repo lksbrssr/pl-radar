@@ -99,7 +99,7 @@ export function seedDemoData(): { curators: number; votes: number } {
   for (const c of SAMPLE_CARDS) repo.upsertCard({ ...c, edition: currentEdition() })
   for (const p of PAST_CARDS) {
     repo.upsertCard({
-      key: p[0]!, title: p[1]!, description: p[2]!, href: 'https://plrd.org/',
+      key: p[0]!, title: p[1]!, description: p[2]!, href: `https://plrd.org/demo/${p[0]}`,
       type: p[3]!, area_slug: p[4]!, area_label: p[5]!, source: p[6]!,
       source_kind: p[7] as 'internal' | 'field', edition: prevEdition(),
     })
