@@ -20,6 +20,7 @@ import {
   type CardFeatures,
   type Vote,
 } from '../ranking/partworths.js'
+import { fitStrengths } from '../ranking/strength.js'
 import { currentEdition } from '../config.js'
 import { SAMPLE_CARDS } from '../seed/cards.js'
 import { ROLES, FOCUS_AREAS, type Card } from '../types.js'
@@ -101,8 +102,54 @@ export function validateEstimator(): boolean {
   return pass
 }
 
-// Run the estimator contract test up front (pure, no DB writes).
+/**
+ * Contract test for the confidence-aware card strength (ranking/strength.ts):
+ * fabricate cards with KNOWN strengths, sample pairwise votes from the
+ * Bradley–Terry model, refit, and confirm (a) we recover the ranking and (b)
+ * the SE shrinks for cards with more games than for a deliberately thin one.
+ */
+function validateStrength(): boolean {
+  const rnd = mulberry32(99)
+  const N = 24
+  // True latent strength in logits, spread across the pool.
+  const trueTheta = Array.from({ length: N }, (_, i) => (i - (N - 1) / 2) * 0.18)
+  const sig = (z: number) => 1 / (1 + Math.exp(-z))
+  const ids = Array.from({ length: N }, (_, i) => i + 1)
+  const votes: { winner_card_id: number; loser_card_id: number }[] = []
+  // Card #N (id N) is deliberately starved of games to test the SE signal.
+  const thin = N
+  for (let i = 0; i < 9000; i++) {
+    let a = 1 + Math.floor(rnd() * N)
+    let b = 1 + Math.floor(rnd() * N)
+    while (b === a) b = 1 + Math.floor(rnd() * N)
+    if ((a === thin || b === thin) && rnd() > 0.12) continue // starve the thin card
+    const aWins = rnd() < sig(trueTheta[a - 1]! - trueTheta[b - 1]!)
+    votes.push({ winner_card_id: aWins ? a : b, loser_card_id: aWins ? b : a })
+  }
+  const fit = fitStrengths(ids, votes)
+  // Spearman-ish: since trueTheta is monotonic in id, check rating increases in id.
+  const ratings = ids.map((id) => fit.get(id)!.rating)
+  let concordant = 0, pairs = 0
+  for (let i = 0; i < N; i++)
+    for (let j = i + 1; j < N; j++) {
+      pairs++
+      if (ratings[j]! > ratings[i]!) concordant++
+    }
+  const rankAcc = concordant / pairs
+  const thinSe = fit.get(thin)!.se
+  const medianSe = ids.map((id) => fit.get(id)!.se).sort((a, b) => a - b)[Math.floor(N / 2)]!
+  const pass = rankAcc > 0.9 && thinSe > medianSe * 1.5
+  console.log(
+    `[validate] strength: rankAccuracy=${rankAcc.toFixed(3)} ` +
+      `thinSE=${thinSe.toFixed(1)}pts medianSE=${medianSe.toFixed(1)}pts ` +
+      `games(thin)=${fit.get(thin)!.games} \u2192 ${pass ? 'PASS \u2705' : 'FAIL \u274c'}`,
+  )
+  return pass
+}
+
+// Run the estimator contract tests up front (pure, no DB writes).
 validateEstimator()
+validateStrength()
 
 function prevEdition(): string {
   const d = new Date()

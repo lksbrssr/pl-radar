@@ -26,6 +26,11 @@ export const config = {
 
   /** Number of pair comparisons in one daily round. */
   roundSize: Number(process.env.ROUND_SIZE || 3),
+
+  /** Max consecutive defenses before the reigning champion is forced to rotate
+   *  out (king-of-the-hill exposure cap). Stops one hot card from hogging the
+   *  comparison budget so late-added and mid-pack cards still get sampled. */
+  reignCap: Number(process.env.REIGN_CAP || 4),
 } as const
 
 export function isAdmin(userId: number): boolean {

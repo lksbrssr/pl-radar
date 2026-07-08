@@ -180,6 +180,9 @@ export async function handleVotingCallback(
     newLoserRating: rated.loser,
   })
   s.cast = (s.cast ?? 0) + 1
+  // Track how long this card has reigned. A win by the current champion extends
+  // its reign; dethroning (or the first champion) resets it to 1.
+  s.reign = winnerSlot === s.championSlot ? (s.reign ?? 1) + 1 : 1
   s.championSlot = winnerSlot // the winner now reigns, in its current slot
 
   // Round finished?
@@ -200,6 +203,29 @@ export async function handleVotingCallback(
     })
     await ctx.answerCallbackQuery({ text: '🎉 Round complete!' }).catch(() => {})
     return true
+  }
+
+  // Exposure cap: once a card has defended reignCap times in a row, force it to
+  // rotate out so it can't hog the comparison budget. Both slots get a fresh
+  // card and nobody reigns — this spreads votes to late-added / mid-pack cards.
+  const capped = (s.reign ?? 0) >= config.reignCap
+  if (capped) {
+    const fresh = repo.pickChallengerExcluding([winner.id, loser.id])
+    const fresh2 = fresh
+      ? repo.pickChallengerExcluding([winner.id, loser.id, fresh.id])
+      : undefined
+    if (fresh && fresh2) {
+      s.slotAId = fresh.id
+      s.slotBId = fresh2.id
+      s.championSlot = null
+      s.reign = 0
+      s.comparison = index + 1
+      repo.setSession(from.id, s)
+      await editMatchup(ctx, s, s.comparison, size)
+      await ctx.answerCallbackQuery({ text: '🔁 Fresh pair — spreading the votes' }).catch(() => {})
+      return true
+    }
+    // Fall through to normal behaviour if we can't find two fresh cards.
   }
 
   // King of the hill: winner stays in its slot; challenger enters the loser's.

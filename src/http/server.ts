@@ -37,6 +37,11 @@ import {
   type RoleFit,
 } from '../ranking/partworths.js'
 import { ROLES, FOCUS_AREAS, ANGLES, type Card } from '../types.js'
+import {
+  editionStrengthRanking,
+  cutConfidence,
+  coverageGaps,
+} from '../ranking/strength.js'
 import { renderDashboard } from './dashboard.js'
 import { currentEdition, editionLabel } from '../config.js'
 import { SOURCES } from '../ingest/sources/index.js'
@@ -53,8 +58,13 @@ function formatDate(iso: string): string {
   })
 }
 
-/** Shape a card as plrd.org's RadarItem (+ derived rating). */
-function toRadarItem(card: Card, rating: number) {
+/** Shape a card as plrd.org's RadarItem (+ derived rating and, optionally, the
+ *  confidence-aware SE/score used for the published cut). */
+function toRadarItem(
+  card: Card,
+  rating: number,
+  extra?: { rd?: number; score?: number },
+) {
   return {
     key: card.key,
     title: card.title,
@@ -67,7 +77,14 @@ function toRadarItem(card: Card, rating: number) {
     date: card.edition ? editionLabel(card.edition) : formatDate(card.created_at),
     image: card.image ?? undefined,
     _rating: Math.round(rating),
+    ...(extra?.rd != null ? { _rd: Math.round(extra.rd) } : {}),
+    ...(extra?.score != null ? { _score: Math.round(extra.score) } : {}),
   }
+}
+
+/** True when a profile actually filters (an active lens), vs the General Radar. */
+function hasLens(p: Profile): boolean {
+  return !!(p.role || p.focus?.length || p.traits?.length)
 }
 
 /**
@@ -150,12 +167,34 @@ export function createServer() {
     res.json({ current: cur, editions })
   })
 
-  // The Radar for an edition, ranked through a composite profile (role AND
-  // focus areas AND future traits). Returns top `limit` cards as RadarItems.
+  // The Radar for an edition. The GENERAL radar (no lens) is the PUBLISHED cut:
+  // ranked by the confidence-aware Bradley–Terry score (rating − z·SE), so it's
+  // fair to late-added / thinly-voted cards regardless of when they entered.
+  // A LENS (role/focus profile) is exploratory — kept on the fast per-profile
+  // Elo recompute ("what people like you ranked"), which is lower-sample by
+  // nature and not the official cut.
   app.get('/api/radar.json', (req, res) => {
     const edition = (req.query.edition as string) || currentEdition()
     const profile = parseProfile(req.query as Record<string, unknown>)
     const limit = Math.min(Number(req.query.limit) || 5, 12)
+
+    if (!hasLens(profile)) {
+      const ranking = editionStrengthRanking(edition)
+      const items = ranking
+        .slice(0, limit)
+        .map((r) => toRadarItem(getCard(r.id)!, r.rating, { rd: r.se, score: r.score }))
+      return res.json({
+        edition,
+        label: editionLabel(edition),
+        profile,
+        rankedBy: 'confidence',
+        cut: cutConfidence(ranking, limit),
+        peers: countCuratorsMatching(profile),
+        poolSize: ranking.length,
+        items,
+      })
+    }
+
     const ranked = rankEditionByProfile(edition, profile)
     const items = ranked
       .slice(0, limit)
@@ -164,6 +203,7 @@ export function createServer() {
       edition,
       label: editionLabel(edition),
       profile,
+      rankedBy: 'lens',
       peers: countCuratorsMatching(profile),
       poolSize: ranked.length,
       items,
@@ -320,27 +360,43 @@ export function createServer() {
   app.get('/api/radar-candidates.json', (req, res) => {
     const limit = Math.min(Number(req.query.limit) || 6, 24)
     const edition = (req.query.edition as string) || currentEdition()
-    const items = globalLeaderboard()
-      .map((row) => ({ row, card: getCard(row.id)! }))
-      .filter(({ card }) => card.edition === edition && card.active)
-      .slice(0, limit)
-      .map(({ row, card }) => {
-        return {
-          key: card.key,
-          title: card.title,
-          description: card.description ?? undefined,
-          href: card.href,
-          external: !!card.external,
-          type: card.type,
-          areaLabel: card.area_label,
-          areaSlug: card.area_slug,
-          date: formatDate(card.created_at),
-          image: card.image ?? undefined,
-          // Extra signal for downstream use (ignored by the current Radar):
-          _rating: Math.round(row.rating),
-        }
-      })
-    res.json({ generatedAt: new Date().toISOString(), edition, items })
+    // Confidence-aware cut (rating − z·SE), not the sequential Elo cache, so the
+    // winners the public Radar ingests aren't skewed by how long a card has
+    // been in the pool.
+    const ranking = editionStrengthRanking(edition)
+    const items = ranking.slice(0, limit).map((r) => {
+      const card = getCard(r.id)!
+      return {
+        key: card.key,
+        title: card.title,
+        description: card.description ?? undefined,
+        href: card.href,
+        external: !!card.external,
+        type: card.type,
+        areaLabel: card.area_label,
+        areaSlug: card.area_slug,
+        date: formatDate(card.created_at),
+        image: card.image ?? undefined,
+        // Extra signal for downstream use (ignored by the current Radar):
+        _rating: Math.round(r.rating),
+        _rd: Math.round(r.se),
+        _score: Math.round(r.score),
+      }
+    })
+    res.json({
+      generatedAt: new Date().toISOString(),
+      edition,
+      cut: cutConfidence(ranking, limit),
+      items,
+    })
+  })
+
+  // What still needs votes to lock this edition's Radar (drives the targeted
+  // Telegram nudge, and the "confidence in the cut" note in the web app).
+  app.get('/api/coverage.json', (req, res) => {
+    const edition = (req.query.edition as string) || currentEdition()
+    const limit = Math.min(Number(req.query.limit) || 5, 12)
+    res.json({ generatedAt: new Date().toISOString(), ...coverageGaps(edition, limit) })
   })
 
   // Machine-readable segment analysis: per-role Elo leaderboards + the pairwise

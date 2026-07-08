@@ -9,6 +9,8 @@
  */
 import type { Bot } from 'grammy'
 import db from './db/index.js'
+import { coverageGaps } from './ranking/strength.js'
+import { currentEdition, editionLabel } from './config.js'
 
 let lastFiredDay = ''
 
@@ -33,6 +35,33 @@ export function startScheduler(bot: Bot): void {
   )
 }
 
+/**
+ * Craft the nudge from the CURRENT state of the cut. If the top-5 boundary is
+ * unresolved or cards are under-sampled, we say exactly how much signal is
+ * still missing — turning the daily ping into a targeted "help us lock the
+ * Radar" ask (the whole point of having curators on tap). If the cut is already
+ * confident, we send a lighter touch.
+ */
+function nudgeText(): string {
+  const label = editionLabel(currentEdition())
+  try {
+    const gap = coverageGaps()
+    if (gap.needsVotes) {
+      const bits: string[] = []
+      if (!gap.cutResolved) bits.push(`the top-5 cut is still too close to call`)
+      if (gap.underSampled > 0)
+        bits.push(`${gap.underSampled} card${gap.underSampled === 1 ? '' : 's'} still need more eyes`)
+      return (
+        `🥊 The ${label} isn’t locked yet — ${bits.join(' and ')}. ` +
+        `A quick /vote round now directly decides what ships.`
+      )
+    }
+    return `✅ The ${label} is looking solid. Want to stress-test it? Tap /vote.`
+  } catch {
+    return '🥊 Your daily match-ups are ready! Tap /vote to shape today’s Radar.'
+  }
+}
+
 async function sendDailyNudges(bot: Bot): Promise<void> {
   const curators = db
     .prepare(
@@ -40,14 +69,12 @@ async function sendDailyNudges(bot: Bot): Promise<void> {
        WHERE status = 'active' AND onboarded_at IS NOT NULL`,
     )
     .all() as { id: number }[]
-  console.log(`[scheduler] nudging ${curators.length} curators`)
+  const text = nudgeText()
+  console.log(`[scheduler] nudging ${curators.length} curators: ${text}`)
 
   for (const c of curators) {
     try {
-      await bot.api.sendMessage(
-        c.id,
-        '🥊 Your daily match-ups are ready! Tap /vote to shape today’s Radar.',
-      )
+      await bot.api.sendMessage(c.id, text)
     } catch (err) {
       // Curator may have blocked the bot — ignore and continue.
       console.warn(`[scheduler] could not nudge ${c.id}:`, String(err))

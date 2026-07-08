@@ -413,7 +413,8 @@ function renderRadar(){
       '<div class="lchips">'+focusChipsHtml+'</div>'+
     '</div>'+
     '<div id="radarMount"></div>'+
-    '<p class="lead" style="margin-top:14px">Showing the top '+((state.radar&&state.radar.items.length)||0)+' of '+((state.radar&&state.radar.poolSize)||0)+' candidates'+(curEd.current?' still in the running this month.':' from that edition.')+'</p>';
+    '<p class="lead" style="margin-top:14px">Showing the top '+((state.radar&&state.radar.items.length)||0)+' of '+((state.radar&&state.radar.poolSize)||0)+' candidates'+(curEd.current?' still in the running this month.':' from that edition.')+'</p>'+
+    cutNote();
   el('selMonth').addEventListener('change', function(e){ if(e.target.value){ state.edition=e.target.value; loadRadar(); } });
   el('selRole').addEventListener('change', function(e){ state.role=e.target.value; saveLens(); loadRadar(); });
   var lr=el('lreset'); if(lr) lr.addEventListener('click', function(){ state.role=''; state.focus=[]; saveLens(); loadRadar(); });
@@ -481,6 +482,18 @@ function shareX(){
   var text = 'PL R&D Radar — '+((state.radar&&state.radar.label)||'')+'\nA one-minute swipe through what\'s new across our research, talks & ideas.';
   var url='https://www.plrd.org/insights';
   window.open('https://twitter.com/intent/tweet?text='+encodeURIComponent(text)+'&url='+encodeURIComponent(url)+'&via=PL_RnD','_blank','noopener');
+}
+// Confidence-in-the-cut note (General radar only). The published Radar is ranked
+// by a conservative score (rating − z·SE), so a close #5/#6 boundary means the
+// crowd hasn't decided yet — more votes will.
+function cutNote(){
+  var r = state.radar;
+  if(!r || r.rankedBy!=='confidence' || !r.cut) return '';
+  var cur = (state.editions.find(function(e){return e.edition===state.edition;})||{}).current;
+  if(r.cut.resolved){
+    return '<p class="lead" style="margin-top:-8px;color:var(--pos)">✓ The top-'+((r.items&&r.items.length)||5)+' cut is statistically settled.</p>';
+  }
+  return '<p class="lead" style="margin-top:-8px">⚡ The #'+((r.items&&r.items.length)||5)+'/#'+(((r.items&&r.items.length)||5)+1)+' spot is still a toss-up (margin '+r.cut.margin+' pts)'+(cur?' — votes are still deciding it.':'.')+'</p>';
 }
 function loadRadar(){
   var q='/api/radar.json?edition='+encodeURIComponent(state.edition)+'&limit=5';
