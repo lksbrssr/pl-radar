@@ -181,24 +181,38 @@ export function clearSession(curatorId: number): void {
 // Cards
 // ---------------------------------------------------------------------------
 
+/**
+ * Card columns + the primary `angle` pulled from the `card_attributes` EAV
+ * table (attr_key='angle'). Reads select through this so a Card always carries
+ * its angle without a schema column on `cards`.
+ */
+const CARD_COLUMNS = `c.*, (
+  SELECT a.attr_value FROM card_attributes a
+  WHERE a.card_id = c.id AND a.attr_key = 'angle'
+  LIMIT 1
+) AS angle`
+
 export function getCard(id: number): Card | undefined {
-  return db.prepare('SELECT * FROM cards WHERE id = ?').get(id) as
-    | Card
-    | undefined
+  return db
+    .prepare(`SELECT ${CARD_COLUMNS} FROM cards c WHERE c.id = ?`)
+    .get(id) as Card | undefined
 }
 
 /** Cards open for voting: active AND in the current monthly edition. Old
  *  editions "expire" out of the voting pool automatically. */
 export function getActiveCards(): Card[] {
   return db
-    .prepare('SELECT * FROM cards WHERE active = 1 AND edition = ? ORDER BY id')
+    .prepare(
+      `SELECT ${CARD_COLUMNS} FROM cards c
+       WHERE c.active = 1 AND c.edition = ? ORDER BY c.id`,
+    )
     .all(currentEdition()) as Card[]
 }
 
 /** Every card (active and retired), highest-rated first — for the dashboard. */
 export function getAllCards(): Card[] {
   return db
-    .prepare('SELECT * FROM cards ORDER BY rating DESC')
+    .prepare(`SELECT ${CARD_COLUMNS} FROM cards c ORDER BY c.rating DESC`)
     .all() as Card[]
 }
 
@@ -236,11 +250,11 @@ export function pickChallenger(
 ): Card | undefined {
   return db
     .prepare(
-      `SELECT * FROM cards
-       WHERE active = 1
-         AND edition = ?
-         AND id != COALESCE(?, -1)
-       ORDER BY matches ASC, RANDOM()
+      `SELECT ${CARD_COLUMNS} FROM cards c
+       WHERE c.active = 1
+         AND c.edition = ?
+         AND c.id != COALESCE(?, -1)
+       ORDER BY c.matches ASC, RANDOM()
        LIMIT 1`,
     )
     .get(currentEdition(), excludeId) as Card | undefined
@@ -286,7 +300,12 @@ export function upsertCard(card: {
   edition?: string
   image?: string | null
   external?: boolean
+  /** Primary rhetorical hook (see ANGLES in types.ts). */
+  angle?: string | null
+  /** Optional secondary hook. */
+  angle_secondary?: string | null
 }): void {
+  const tx = db.transaction(() => {
   db.prepare(
     `INSERT INTO cards
        (key, title, description, href, source, source_kind, type,
@@ -320,6 +339,52 @@ export function upsertCard(card: {
     image: card.image ?? null,
     external: card.external ? 1 : 0,
   })
+
+  // Persist angle(s) into the card_attributes EAV table. We resolve the card
+  // id from its stable key (works for both insert and update paths) and
+  // replace any existing angle rows so re-seeding is idempotent.
+  if (card.angle !== undefined || card.angle_secondary !== undefined) {
+    const id = (
+      db.prepare('SELECT id FROM cards WHERE key = ?').get(card.key) as {
+        id: number
+      }
+    ).id
+    setCardAngles(id, {
+      angle: card.angle ?? null,
+      angle_secondary: card.angle_secondary ?? null,
+    })
+  }
+  })
+  tx()
+}
+
+/**
+ * Replace a card's angle rows in `card_attributes`. `angle` is the primary hook
+ * (attr_key='angle'); `angle_secondary` is optional (attr_key='angle_secondary').
+ * Passing `null` clears that slot. Only the keys provided are touched.
+ */
+export function setCardAngles(
+  cardId: number,
+  angles: { angle?: string | null; angle_secondary?: string | null },
+): void {
+  const del = db.prepare(
+    'DELETE FROM card_attributes WHERE card_id = ? AND attr_key = ?',
+  )
+  const ins = db.prepare(
+    'INSERT OR IGNORE INTO card_attributes (card_id, attr_key, attr_value) VALUES (?, ?, ?)',
+  )
+  const tx = db.transaction(() => {
+    if (angles.angle !== undefined) {
+      del.run(cardId, 'angle')
+      if (angles.angle) ins.run(cardId, 'angle', angles.angle)
+    }
+    if (angles.angle_secondary !== undefined) {
+      del.run(cardId, 'angle_secondary')
+      if (angles.angle_secondary)
+        ins.run(cardId, 'angle_secondary', angles.angle_secondary)
+    }
+  })
+  tx()
 }
 
 // ---------------------------------------------------------------------------

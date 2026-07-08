@@ -156,7 +156,12 @@ export function rankEditionByProfile(edition: string, p: Profile) {
 
 function rankCards(ratings: Map<number, number>) {
   const cards = db
-    .prepare('SELECT id, key, title, area_slug, type, source_kind FROM cards')
+    .prepare(
+      `SELECT c.id, c.key, c.title, c.area_slug, c.type, c.source_kind,
+              (SELECT a.attr_value FROM card_attributes a
+               WHERE a.card_id = c.id AND a.attr_key = 'angle' LIMIT 1) AS angle
+       FROM cards c`,
+    )
     .all() as {
     id: number
     key: string
@@ -164,6 +169,7 @@ function rankCards(ratings: Map<number, number>) {
     area_slug: string
     type: string
     source_kind: string
+    angle: string | null
   }[]
   return cards
     .map((c) => ({ ...c, rating: ratings.get(c.id) ?? 1500 }))
@@ -173,27 +179,47 @@ function rankCards(ratings: Map<number, number>) {
 /**
  * Attribute win-rates. For each value of an attribute, how often did cards with
  * that value win the comparisons they took part in? Optionally scoped to a role.
+ *
+ * `angle` is stored in the `card_attributes` EAV table (attr_key='angle'), not
+ * as a column on `cards`, so it's read via a join; the plain-column attributes
+ * (`area_slug` / `type` / `source_kind`) are read directly. Cards with no angle
+ * row simply don't contribute to the `angle` breakdown.
  */
 export function attributeWinRates(
-  attribute: 'area_slug' | 'type' | 'source_kind',
+  attribute: 'area_slug' | 'type' | 'source_kind' | 'angle',
   role?: string,
 ) {
   const roleClause = role ? 'AND c.role = ?' : ''
   const params = role ? [role] : []
 
+  // Expression + join for the attribute on the winner (`w`) and loser (`l`)
+  // side. Angle joins the EAV table; other attributes are card columns.
+  const winExpr =
+    attribute === 'angle' ? 'aw.attr_value' : `w.${attribute}`
+  const loseExpr =
+    attribute === 'angle' ? 'al.attr_value' : `l.${attribute}`
+  const winJoin =
+    attribute === 'angle'
+      ? `JOIN card_attributes aw ON aw.card_id = v.winner_card_id AND aw.attr_key = 'angle'`
+      : `JOIN cards w ON w.id = v.winner_card_id`
+  const loseJoin =
+    attribute === 'angle'
+      ? `JOIN card_attributes al ON al.card_id = v.loser_card_id AND al.attr_key = 'angle'`
+      : `JOIN cards l ON l.id = v.loser_card_id`
+
   const rows = db
     .prepare(
       `WITH outcomes AS (
-         SELECT w.${attribute} AS attr, 1 AS win, 0 AS loss
+         SELECT ${winExpr} AS attr, 1 AS win, 0 AS loss
          FROM votes v
          JOIN curators c ON c.id = v.curator_id
-         JOIN cards w ON w.id = v.winner_card_id
+         ${winJoin}
          WHERE 1=1 ${roleClause}
          UNION ALL
-         SELECT l.${attribute} AS attr, 0 AS win, 1 AS loss
+         SELECT ${loseExpr} AS attr, 0 AS win, 1 AS loss
          FROM votes v
          JOIN curators c ON c.id = v.curator_id
-         JOIN cards l ON l.id = v.loser_card_id
+         ${loseJoin}
          WHERE 1=1 ${roleClause}
        )
        SELECT attr,

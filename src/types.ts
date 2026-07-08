@@ -23,6 +23,29 @@ export const ROLES = [
 
 export type RoleKey = (typeof ROLES)[number]['key']
 
+/**
+ * Card ANGLES — the emotional/rhetorical hook that explains *why* a real signal
+ * lands, kept orthogonal to its topic (focus area) and format (type). Tagging an
+ * angle lets the analysis separate "what pulls a segment" (topic) from "how it
+ * pulls" (angle). Each card gets one primary angle (optional secondary).
+ *
+ * Discipline: the angle names why a genuine signal is compelling; it must never
+ * inflate a weak card. If the honest read is "incremental," tag it that way
+ * (`clarifying`/`proof` are the honest homes for solid-but-unflashy work). No
+ * manufactured outrage.
+ */
+export const ANGLES = [
+  { key: 'counterintuitive', label: 'Counterintuitive', emoji: '🔀', hint: 'cuts against the obvious read' },
+  { key: 'big-if-true', label: 'Big if true', emoji: '🎲', hint: 'high-stakes claim worth watching' },
+  { key: 'early-signal', label: 'Early signal', emoji: '🌱', hint: 'faint but real, ahead of the curve' },
+  { key: 'provocative', label: 'Provocative', emoji: '⚡', hint: 'challenges a comfortable consensus' },
+  { key: 'funny', label: 'Funny', emoji: '😄', hint: 'lands because it is genuinely fun' },
+  { key: 'clarifying', label: 'Clarifying', emoji: '🔎', hint: 'makes a messy topic legible' },
+  { key: 'proof', label: 'Proof', emoji: '✅', hint: 'shows something actually works' },
+] as const
+
+export type AngleKey = (typeof ANGLES)[number]['key']
+
 export type Card = {
   id: number
   key: string
@@ -41,6 +64,8 @@ export type Card = {
   rating: number
   matches: number
   created_at: string
+  /** Primary rhetorical hook (from card_attributes, attr_key='angle'). */
+  angle: string | null
 }
 
 export type Curator = {
