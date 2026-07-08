@@ -290,7 +290,7 @@ export function renderDashboard(): string {
     <nav class="nav" id="nav">
       <button data-route="radar"><span class="ic">📡</span> Radar</button>
       <button data-route="vote"><span class="ic">🗳️</span> Vote</button>
-      <button data-route="data"><span class="ic">📊</span> Data</button>
+      <button data-route="data"><span class="ic">📊</span> Insights</button>
       <button data-route="sources"><span class="ic">🛰️</span> Sources</button>
     </nav>
     <div class="side-foot">
