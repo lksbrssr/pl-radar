@@ -20,10 +20,12 @@ import {
   globalLeaderboard,
   leaderboardForRole,
   attributeWinRates,
+  rankEdition,
+  type Lens,
 } from '../ranking/segments.js'
-import { ROLES } from '../types.js'
+import { ROLES, FOCUS_AREAS, type Card } from '../types.js'
 import { renderDashboard } from './dashboard.js'
-import { currentEdition } from '../config.js'
+import { currentEdition, editionLabel } from '../config.js'
 
 function formatDate(iso: string): string {
   const d = new Date(iso.replace(' ', 'T') + 'Z')
@@ -34,6 +36,31 @@ function formatDate(iso: string): string {
   })
 }
 
+/** Shape a card as plrd.org's RadarItem (+ derived rating). */
+function toRadarItem(card: Card, rating: number) {
+  return {
+    key: card.key,
+    title: card.title,
+    description: card.description ?? undefined,
+    href: card.href,
+    external: !!card.external,
+    type: card.type,
+    areaLabel: card.area_label,
+    areaSlug: card.area_slug,
+    date: card.edition ? editionLabel(card.edition) : formatDate(card.created_at),
+    image: card.image ?? undefined,
+    _rating: Math.round(rating),
+  }
+}
+
+/** Parse a lens query string: "general" | "role:capital" | "focus:ai-robotics". */
+function parseLens(raw: unknown): Lens {
+  const s = typeof raw === 'string' ? raw : 'general'
+  if (s.startsWith('role:')) return { type: 'role', key: s.slice(5) }
+  if (s.startsWith('focus:')) return { type: 'focus', slug: s.slice(6) }
+  return { type: 'general' }
+}
+
 export function createServer() {
   const app = express()
 
@@ -42,13 +69,71 @@ export function createServer() {
 
   app.get('/health', (_req, res) => res.json({ ok: true }))
 
-  // The dashboard IS the landing page (so the PL app store shows it at `/`).
+  // The single-page app shell (sidebar: Radar / Vote / Data) is the landing
+  // page, so the PL app store shows it at `/`.
   app.get(['/', '/dashboard'], (_req, res) => {
     res.type('html').send(renderDashboard())
   })
 
   app.get('/api/leaderboard.json', (_req, res) => {
     res.json({ generatedAt: new Date().toISOString(), cards: globalLeaderboard() })
+  })
+
+  // Editions available, newest first, with labels + a `current` flag.
+  app.get('/api/editions.json', (_req, res) => {
+    const cur = currentEdition()
+    const editions = repo.listEditions().map((e) => ({
+      edition: e.edition,
+      label: editionLabel(e.edition),
+      cards: e.cards,
+      votes: e.votes ?? 0,
+      current: e.edition === cur,
+    }))
+    res.json({ current: cur, editions })
+  })
+
+  // The Radar for an edition, ranked through a lens (general / role / focus).
+  // Returns top `limit` cards in plrd.org's RadarItem shape.
+  app.get('/api/radar.json', (req, res) => {
+    const edition = (req.query.edition as string) || currentEdition()
+    const lens = parseLens(req.query.lens)
+    const limit = Math.min(Number(req.query.limit) || 5, 12)
+    const ranked = rankEdition(edition, lens)
+    const items = ranked
+      .slice(0, limit)
+      .map((row) => toRadarItem(getCard(row.id)!, row.rating))
+    res.json({
+      edition,
+      label: editionLabel(edition),
+      lens: req.query.lens || 'general',
+      poolSize: ranked.length,
+      items,
+    })
+  })
+
+  // Everything the Data view needs, in one call.
+  app.get('/api/overview.json', (_req, res) => {
+    res.json({
+      generatedAt: new Date().toISOString(),
+      curators: repo.countCurators(),
+      totalVotes: repo.totalVotes(),
+      lenses: {
+        roles: ROLES.map((r) => ({ key: r.key, label: r.label, emoji: r.emoji })),
+        areas: FOCUS_AREAS.map((a) => ({ slug: a.slug, label: a.label, emoji: a.emoji })),
+      },
+      attributeWinRates: {
+        area: attributeWinRates('area_slug'),
+        type: attributeWinRates('type'),
+        sourceKind: attributeWinRates('source_kind'),
+      },
+      byRole: ROLES.map((r) => ({
+        key: r.key,
+        label: r.label,
+        emoji: r.emoji,
+        areaRates: attributeWinRates('area_slug', r.key),
+      })),
+      curatorList: repo.listCuratorsWithStats(),
+    })
   })
 
   // Top N winners for an edition (default: current month), shaped exactly like

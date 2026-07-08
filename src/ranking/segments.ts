@@ -49,6 +49,49 @@ export function globalLeaderboard() {
   return rankCards(recomputeElo(votes, allCardIds()))
 }
 
+/** Elo leaderboard from votes cast by curators who follow a given focus area. */
+export function leaderboardForFocus(areaSlug: string) {
+  const votes = db
+    .prepare(
+      `SELECT v.winner_card_id, v.loser_card_id
+       FROM votes v
+       WHERE v.curator_id IN (
+         SELECT curator_id FROM curator_focus WHERE area_slug = ?
+       )
+       ORDER BY v.id`,
+    )
+    .all(areaSlug) as VoteRow[]
+  return rankCards(recomputeElo(votes, allCardIds()))
+}
+
+export type Lens =
+  | { type: 'general' }
+  | { type: 'role'; key: string }
+  | { type: 'focus'; slug: string }
+
+/**
+ * Rank one edition's cards through a lens. "general" uses every vote; a role or
+ * focus lens uses only that segment's votes, surfacing what your peers rewarded.
+ * Cards never face cards from other editions, so filtering the ranking to an
+ * edition is safe and keeps ratings independent per month.
+ */
+export function rankEdition(edition: string, lens: Lens) {
+  const board =
+    lens.type === 'role'
+      ? leaderboardForRole(lens.key)
+      : lens.type === 'focus'
+        ? leaderboardForFocus(lens.slug)
+        : globalLeaderboard()
+  const editionIds = new Set(
+    (
+      db
+        .prepare('SELECT id FROM cards WHERE edition = ? AND active = 1')
+        .all(edition) as { id: number }[]
+    ).map((r) => r.id),
+  )
+  return board.filter((c) => editionIds.has(c.id))
+}
+
 function rankCards(ratings: Map<number, number>) {
   const cards = db
     .prepare('SELECT id, key, title, area_slug, type, source_kind FROM cards')

@@ -168,13 +168,34 @@ reigning champion is marked `👑 reigning` so curators feel the NYT-style
 
 ---
 
+## Web app (the `/` dashboard)
+
+The HTTP root serves a single-page app (Inter + Newsreader, light/dark, styled
+like plrd.org) with a left sidebar:
+
+- **Radar** — the published Radar for a chosen **month** as a swipeable carousel
+  (top 5 + "you're all caught up" + Share on X), recycled from plrd.org/insights.
+  A **lens** selector switches between the **General Radar** (all votes) and a
+  **peer segment** (your role or focus area) — "what people like you found most
+  relevant".
+- **Vote** — participate in voting (full in-browser flow is the next PR; for now
+  it links to the Telegram bot).
+- **Data** — curation analytics: who-values-what, per-role preference, curators.
+
+Content is organised by monthly **edition**: only the current month is open for
+voting; past months appear as published Radars. Old cards expire out of the pool
+automatically.
+
 ## Read-only API (what consumers use)
 
 | Endpoint | Purpose |
 | --- | --- |
 | `GET /health` | Liveness probe (required by Fly/PLN). |
+| `GET /api/editions.json` | Months available, with labels + a `current` flag. |
+| `GET /api/radar.json?edition=&lens=&limit=5` | Top cards for an edition through a lens (`general` / `role:<key>` / `focus:<slug>`), in **`RadarItem`** shape. |
+| `GET /api/radar-candidates.json?edition=&limit=6` | Current-edition winners for plrd.org to ingest. |
+| `GET /api/overview.json` | Everything the Data view needs (stats, win-rates, curators). |
 | `GET /api/leaderboard.json` | Global Elo ranking of the card pool. |
-| `GET /api/radar-candidates.json?limit=6` | Top winners in plrd.org's **`RadarItem`** shape — drop-in for the public Radar. |
 | `GET /api/segments.json` | Per-role leaderboards + attribute win-rates. |
 
 `radar-candidates.json` intentionally matches the `RadarItem` type in
