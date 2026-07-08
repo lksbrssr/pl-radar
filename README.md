@@ -20,7 +20,9 @@ care about what*.
 
 > **Status:** Live in production on Fly.io (Telegram bot + web app + API). The
 > web app (Radar carousel, month + composite-lens selectors, Data view) is in
-> review. Next: in-browser voting, then internal-source ingestion.
+> review. In-browser voting and AI-assisted card/source submission (paste a URL,
+> an LLM drafts a reviewable card; dedup runs on add) are live. Next:
+> internal-source ingestion.
 
 ---
 
@@ -93,8 +95,9 @@ src/
     keyboards.ts       Inline keyboards
     copy.ts            All user-facing text + progress-bar helper
     session.ts         Transient per-curator flow state type
-  http/server.ts       /health + read-only /api/*.json
-  scheduler.ts         Optional daily nudge
+  http/server.ts       /health + read-only /api/*.json + /api/submit/* (AI submit)
+  submit/              Paste-a-URL submission: fetch.ts → llm.ts → parse.ts + dedup.ts
+  scheduler.ts         Optional daily nudge + background re-ingest
   seed/                Sample cards + `npm run seed`
   dev/simulate.ts      Offline harness to sanity-check the ranking maths
   index.ts             Entry point (starts HTTP + bot together)

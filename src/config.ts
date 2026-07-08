@@ -45,7 +45,19 @@ export const config = {
    *  and it self-heals cross-posts that entered before their identity was known.
    *  Set INGEST_INTERVAL_HOURS=0 to disable. Only runs in the full (bot) process. */
   ingestIntervalHours: Number(process.env.INGEST_INTERVAL_HOURS ?? 3),
+
+  /** Card/source submission is open by default (like in-browser voting). The AI
+   *  drafting is bring-your-own-key: each user connects their OWN Anthropic key
+   *  in the browser and the model call happens client-side, so the server never
+   *  holds an API key and never spends tokens. Set SUBMIT_DISABLED=1 to turn the
+   *  whole submission surface off. */
+  submitDisabled: process.env.SUBMIT_DISABLED === '1',
 } as const
+
+/** True when the submission surface is turned on (the default). */
+export function submitEnabled(): boolean {
+  return !config.submitDisabled
+}
 
 export function isAdmin(userId: number): boolean {
   return config.adminIds.includes(userId)

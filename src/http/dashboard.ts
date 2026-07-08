@@ -404,6 +404,40 @@ export function renderDashboard(): string {
     font-size:13px;color:var(--ink-soft);margin-bottom:14px;line-height:1.55;}
   .calloutbox strong{color:var(--ink);}
   @media(max-width:560px){ .pathgrid{grid-template-columns:1fr;} }
+  /* AI submission flow */
+  .urlrow{display:flex;gap:8px;margin-bottom:6px;}
+  .urlrow input{flex:1;padding:11px 13px;border:1px solid var(--line);border-radius:10px;
+    background:var(--white);color:var(--ink);font-family:inherit;font-size:14px;}
+  .urlrow .btn{white-space:nowrap;cursor:pointer;border:none;}
+  .subnote{font-size:12px;color:var(--muted);margin:2px 0 14px;}
+  .altlink{background:none;border:none;color:var(--blue);font-size:13px;cursor:pointer;padding:0;font-family:inherit;}
+  .altlink:hover{text-decoration:underline;}
+  .spin{display:inline-block;width:15px;height:15px;border:2px solid rgba(127,127,127,.35);
+    border-top-color:var(--ink);border-radius:50%;animation:spin .7s linear infinite;vertical-align:-2px;margin-right:7px;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .parsing{display:flex;align-items:center;gap:10px;background:var(--gray-50);border:1px solid var(--line);
+    border-radius:12px;padding:16px;font-size:13.5px;color:var(--ink-soft);}
+  .draftprev{border:1px solid var(--line);border-radius:14px;overflow:hidden;margin-bottom:14px;background:var(--white);}
+  .draftprev .dp-media{aspect-ratio:16/8;background:var(--gray-200);position:relative;}
+  .draftprev .dp-media img{width:100%;height:100%;object-fit:cover;display:block;}
+  .draftprev .dp-area{position:absolute;left:10px;bottom:10px;color:#fff;font-size:10px;font-weight:600;
+    letter-spacing:.05em;text-transform:uppercase;padding:3px 8px;border-radius:999px;}
+  .rationale{font-size:12px;color:var(--muted);font-style:italic;margin:0 0 12px;padding-left:10px;border-left:2px solid var(--line);}
+  .dedupbox{background:#fdf0c8;border:1px solid #eacd76;border-radius:12px;padding:14px 16px;margin-bottom:14px;color:#6b5200;font-size:13px;line-height:1.5;}
+  html.dark .dedupbox{background:#3a2f12;border-color:#5c4a1a;color:#f5c451;}
+  .dedupbox b{color:inherit;} .dedupbox .dd-open{display:inline-block;margin-top:6px;font-weight:600;cursor:pointer;color:inherit;text-decoration:underline;}
+  .errbox{background:rgba(214,69,69,.10);border:1px solid rgba(214,69,69,.35);border-radius:12px;
+    padding:13px 15px;margin-bottom:14px;color:var(--neg);font-size:13px;line-height:1.5;}
+  .okbox{text-align:center;padding:14px 6px;}
+  .okbox .okc{width:60px;height:60px;margin:4px auto 14px;border-radius:50%;background:#e7f7ef;color:#18b26b;
+    display:flex;align-items:center;justify-content:center;font-size:28px;}
+  html.dark .okbox .okc{background:#0f2a1c;}
+  .okbox h4{font-family:Newsreader,serif;font-size:22px;margin:0 0 6px;}
+  .samplelist{list-style:none;padding:0;margin:8px 0 14px;}
+  .samplelist li{display:flex;gap:8px;align-items:baseline;padding:7px 0;border-bottom:1px solid var(--line);font-size:13px;}
+  .samplelist li:last-child{border-bottom:none;}
+  .samplelist .sdot{width:7px;height:7px;border-radius:50%;flex:none;position:relative;top:5px;}
+  .samplelist .stype{color:var(--muted);font-size:11px;flex:none;}
   /* modal */
   .modal{position:fixed;inset:0;background:rgba(19,19,22,.55);display:none;align-items:center;justify-content:center;padding:20px;z-index:50;}
   .modal.open{display:flex;}
@@ -924,9 +958,9 @@ function renderSources(){
         '<p>'+esc(s.description)+'</p>'+
         '<div class="foot">'+home+'<span class="n muted">'+s.cards+' in pool</span></div></div>';
     }).join('');
-    var add = '<div class="addsrc"><h3>➕ Add a source or card</h3>'+
-      '<p>Feed the Radar a whole new source, or just drop in a single card. A guided walkthrough hands the work to your coding agent — one small pull request, no infra, no secrets.</p>'+
-      '<button class="btn" id="opensrc">Start the walkthrough →</button></div>';
+    var add = '<div class="addsrc"><h3>➕ Add a card or source</h3>'+
+      '<p>Paste a link to anything — an article, a post, a paper — and let AI draft a card you review, or wire up a recurring feed. Duplicates are caught and flagged automatically.</p>'+
+      '<button class="btn" id="opensrc">Add to the Radar →</button></div>';
     // Blurred placeholders for the not-yet-unlocked proprietary/internal feeds.
     var lockTiles = [
       ['PL Capital', 'Portfolio & investment signals from across the PL network.'],
@@ -1094,7 +1128,7 @@ function openMeth(k){
 }
 function closeMeth(){ el('methmodal').classList.remove('open'); }
 
-// ---- Add-source / add-card wizard ----
+// ---- Add-card / add-source wizard (bring-your-own-Claude, dedup) ----
 var AREAS_W = [
   {slug:'digital-human-rights',label:'Digital Human Rights'},
   {slug:'economies-governance',label:'Economies & Governance'},
@@ -1102,160 +1136,414 @@ var AREAS_W = [
   {slug:'neurotech',label:'Neurotech'}
 ];
 var TYPES_W = ['Talk','Podcast','Publication','Blog','Signal'];
+var AREA_KEYS_W = AREAS_W.map(function(a){ return a.slug; });
 var repoMeta = {
   repoUrl:'https://github.com/lksbrssr/plrd-radar-curator',
   guideUrl:'https://github.com/lksbrssr/plrd-radar-curator/blob/main/src/ingest/README.md',
   sourcesDir:'https://github.com/lksbrssr/plrd-radar-curator/tree/main/src/ingest/sources'
 };
-var wiz = { path:null, step:0, data:{} };
+function wizSlug(s){ return String(s||'').toLowerCase().replace(/https?:\/\//,'').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,60); }
+function repoShort(){ return repoMeta.repoUrl.replace('https://github.com/',''); }
 
+// Is submission turned on at all (SUBMIT_DISABLED flips it off).
+var SUBMIT = { checked:false, enabled:true };
+function loadSubmitStatus(){
+  return getJSON('/api/submit/status').then(function(s){ SUBMIT={checked:true,enabled:!!s.enabled}; })
+    .catch(function(){ SUBMIT={checked:true,enabled:true}; });
+}
+
+// The user's own Claude connection: {key, model}, stored ONLY in this browser.
+// Card drafting calls Anthropic directly from here — the key never hits our server.
+var ai=null; try{ ai=JSON.parse(localStorage.getItem('radar-claude')||'null'); }catch(e){}
+function saveAi(v){ ai=v; try{ if(v) localStorage.setItem('radar-claude', JSON.stringify(v)); else localStorage.removeItem('radar-claude'); }catch(e){} }
+function aiOn(){ return !!(ai&&ai.key); }
+function defaultModel(){ return (ai&&ai.model)||'claude-3-5-haiku-latest'; }
+
+function post(path, body){
+  return fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})})
+    .then(function(r){ return r.json().then(function(j){ return {status:r.status, body:j}; }, function(){ return {status:r.status, body:{}}; }); });
+}
+function extractJson(t){
+  var f=String(t||'').match(/\x60\x60\x60(?:json)?\s*([\s\S]*?)\x60\x60\x60/i); var b=f?f[1]:String(t||'');
+  var s=b.indexOf('{'), e=b.lastIndexOf('}'); if(s<0||e<0||e<s) throw new Error('no json'); return JSON.parse(b.slice(s,e+1));
+}
+// Direct browser -> Anthropic call with the user's key (their tokens).
+function callClaude(system, user){
+  return fetch('https://api.anthropic.com/v1/messages',{
+    method:'POST',
+    headers:{'content-type':'application/json','x-api-key':ai.key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+    body:JSON.stringify({model:defaultModel(),max_tokens:1024,system:system,messages:[{role:'user',content:user}]})
+  }).then(function(r){
+    if(!r.ok) return r.text().then(function(t){ var e=new Error('Claude '+r.status); e.status=r.status; e.detail=t; throw e; });
+    return r.json();
+  }).then(function(d){ return (d.content||[]).map(function(c){ return c.text||''; }).join(''); });
+}
+var CARD_SYSTEM='You are an editor for the Protocol Labs R&D Radar, a monthly digest of the strongest signals across four focus areas: digital-human-rights (privacy, encryption, surveillance, rights), economies-governance (funding, mechanisms, markets, governance, public goods), ai-robotics (AI models, agents, robotics, compute), neurotech (brain, BCI, neuroscience). Given ONE web page, return ONLY a JSON object: {"title": tight headline <=90 chars, "description": 1-2 sentences <=240 chars on why it matters, "areaSlug": one of digital-human-rights|economies-governance|ai-robotics|neurotech, "type": one of Talk|Podcast|Publication|Blog|Signal, "angle": one of counterintuitive|big-if-true|early-signal|provocative|funny|clarifying|proof, "source": who to credit <=40 chars, "rationale": one short line}. Never invent facts. Be honest about the angle; do not manufacture hype. Signal is the default type.';
+var SOURCE_SYSTEM='You name a content source for the Protocol Labs R&D Radar. Given a feed title and recent item titles, return ONLY JSON: {"name": <=40 chars, "description": one line <=120 chars describing what this feed brings in}.';
+function cardUserPrompt(m){
+  return 'URL: '+m.finalUrl+'\n'+(m.siteName?'Site: '+m.siteName+'\n':'')+'Page title: '+(m.title||'(none)')+'\n'+(m.description?'Meta description: '+m.description+'\n':'')+'\nPage text (truncated):\n'+(m.text||'(no readable body text)');
+}
+function sourceUserPrompt(d){
+  return 'Feed name: '+(d.name||'(none)')+'\nRecent items:\n'+(d.sample||[]).map(function(s){ return '- '+s.title; }).join('\n');
+}
+function clampArea(s){ return AREA_KEYS_W.indexOf(s)>=0?s:''; }
+function clampType(t){ return TYPES_W.indexOf(t)>=0?t:''; }
+function angleKeys(){ return ((state.overview&&state.overview.lenses.angles)||[]).map(function(a){ return a.key; }); }
+function clampAngle(a){ return angleKeys().indexOf(a)>=0?a:''; }
+
+var wiz = { path:null, view:null, connect:false, data:{}, meta:{}, dedup:null, sample:[], inPool:0, result:null, err:'' };
 function openWiz(){
-  wiz = { path:null, step:0, data:{
-    name:'', url:'', homepage:'', description:'',
-    title:'', cardUrl:'', cardDesc:'', area:'ai-robotics', type:'Signal', source:''
+  wiz = { path:null, view:null, connect:false, dedup:null, sample:[], inPool:0, result:null, err:'', meta:{}, data:{
+    title:'', href:'', description:'', area:'ai-robotics', type:'Signal', source:'', angle:'', image:null, rationale:'',
+    name:'', feedUrl:'', homepage:'', srcDesc:'', srcArea:''
   } };
   el('wizmodal').classList.add('open');
   renderWiz();
+  if(!SUBMIT.checked){ loadSubmitStatus().then(renderWiz); }
 }
 function closeWiz(){ el('wizmodal').classList.remove('open'); }
-// Client-side slug (mirrors src/ingest/util.ts slugify; slugify is server-only).
-function wizSlug(s){ return String(s||'').toLowerCase().replace(/https?:\/\//,'').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,60); }
-function wizKey(){ return wizSlug(wiz.data.name) || 'my-source'; }
-function repoShort(){ return repoMeta.repoUrl.replace('https://github.com/',''); }
-
-function wizTitles(){
-  if(wiz.path==='source') return [
-    {h:'How sources work', s:'A feed the Radar checks every day'},
-    {h:'Describe your source', s:'A few details so we can write the prompt'},
-    {h:'Hand it to your agent', s:'Copy this into your coding agent'},
-    {h:'What happens next', s:'From merged PR to the monthly Radar'}
-  ];
-  return [
-    {h:'Submitting one card', s:'Add a single item, just this once'},
-    {h:'Card details', s:'What is this card about?'},
-    {h:'Hand it to your agent', s:'Copy this into your coding agent'},
-    {h:'What happens next', s:'From merged PR to the pool'}
-  ];
+function setWiz(h,sub,body,foot){
+  el('wiz-steps').style.display='none'; el('wiz-steps').innerHTML='';
+  el('wiz-h').textContent=h; el('wiz-sub').textContent=sub;
+  el('wiz-body').innerHTML=body;
+  el('wiz-foot').style.display=foot?'flex':'none'; el('wiz-foot').innerHTML=foot||'';
 }
+function errHtml(){ return wiz.err?'<div class="errbox">'+esc(wiz.err)+'</div>':''; }
 
 function renderWiz(){
+  if(!SUBMIT.checked){ setWiz('Add to the Radar','Loading\u2026','<div class="parsing"><span class="spin"></span>Getting things ready\u2026</div>',''); return; }
+  if(wiz.connect){ renderConnect(); return; }
   if(wiz.path===null){ renderWizChoice(); return; }
-  var t=wizTitles(), cur=t[wiz.step];
-  el('wiz-h').textContent=cur.h; el('wiz-sub').textContent=cur.s;
-  el('wiz-steps').style.display='flex';
-  el('wiz-steps').innerHTML=t.map(function(_,i){ return '<span class="st'+(i<=wiz.step?' on':'')+'"></span>'; }).join('');
-  var srcSteps=[wizSrcIntro,wizSrcForm,wizSrcPrompt,wizSrcAfter];
-  var cardSteps=[wizCardIntro,wizCardForm,wizCardPrompt,wizCardAfter];
-  el('wiz-body').innerHTML = (wiz.path==='source'?srcSteps:cardSteps)[wiz.step]();
-  var back='<button class="btn-ghost" id="wiz-back">'+(wiz.step===0?'← Choose again':'← Back')+'</button>';
-  var next='<button class="btn" id="wiz-next">'+(wiz.step<3?'Next →':'Done')+'</button>';
-  el('wiz-foot').style.display='flex';
-  el('wiz-foot').innerHTML=back+next;
-  el('wiz-back').onclick=wizBack; el('wiz-next').onclick=wizNext;
-  bindWizInputs(); bindWizCopy();
-  var ts=el('wiz-toseg'); if(ts) ts.onclick=function(ev){ ev.preventDefault(); wiz.path='source'; wiz.step=0; renderWiz(); };
+  if(wiz.path==='card'){ renderCard(); return; }
+  renderSource();
 }
-function wizBack(){ if(wiz.step===0){ wiz.path=null; renderWiz(); } else { wiz.step--; renderWiz(); } }
-function wizNext(){ if(wiz.step>=3){ closeWiz(); } else { wiz.step++; renderWiz(); } }
+
+// ---- Connect Claude (bring your own key) ----
+function renderConnect(){
+  setWiz('Connect Claude','Your own key \u2014 your tokens, in your browser',
+    '<p class="subnote">Paste an Anthropic API key. It\'s stored only in this browser and sent <strong>straight to Anthropic</strong>, never to our server. Drafting a card costs you a fraction of a cent.</p>'+
+    '<div class="field"><label>Anthropic API key</label><input id="w-key" type="password" placeholder="sk-ant-\u2026" value="'+esc(ai&&ai.key?ai.key:'')+'"></div>'+
+    '<p class="subnote"><a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">Get a key \u2192</a> \u2014 free to create; you only pay per use. No key? You can still fill cards in manually.</p>'+
+    errHtml(),
+    '<button class="btn-ghost" id="w-back">\u2190 Back</button><button class="btn" id="w-connect">Connect \u2192</button>');
+  el('w-key').addEventListener('keydown',function(e){ if(e.key==='Enter') el('w-connect').click(); });
+  el('w-back').onclick=function(){ wiz.connect=false; wiz.err=''; renderWiz(); };
+  el('w-connect').onclick=function(){
+    var k=el('w-key').value.trim(); if(!k) return;
+    var btn=el('w-connect'); btn.disabled=true; btn.textContent='Checking\u2026';
+    var prev=ai; ai={key:k,model:defaultModel()};
+    callClaude('You are a helpful assistant.','Reply with just: OK').then(function(){
+      saveAi({key:k,model:defaultModel()}); wiz.err=''; wiz.connect=false; renderWiz();
+    }, function(e){
+      ai=prev;
+      wiz.err=(e&&e.status===401)?'That key was rejected. Double-check it and try again.'
+        :(e&&e.status===403)?'That key isn\'t allowed to call the API.'
+        :'Could not reach Claude with that key (check the key and your connection).';
+      renderWiz();
+    });
+  };
+}
 
 function renderWizChoice(){
-  el('wiz-h').textContent='Add to the Radar';
-  el('wiz-sub').textContent='Two ways to get new cards into the pool';
-  el('wiz-steps').style.display='none'; el('wiz-steps').innerHTML='';
-  el('wiz-body').innerHTML=
-    '<p>Everything on the Radar starts as a candidate card. You can wire up a feed the Radar re-checks daily, or drop in a single item — either way it lands as one small pull request.</p>'+
+  var conn = aiOn()
+    ? '<div class="calloutbox">\u2713 <strong>Claude connected.</strong> Paste a link and it drafts the card for you. <button class="altlink" id="w-disc">Disconnect</button></div>'
+    : '<div class="calloutbox"><button class="altlink" id="w-conn">Connect your Claude key</button> to auto-draft cards from any link (your key, your tokens \u2014 it never touches our server). Optional \u2014 you can always fill cards in by hand.</div>';
+  setWiz('Add to the Radar','Two ways to feed the pool',
+    '<p>Add one item now, or wire up a feed the Radar re-checks daily.</p>'+conn+
     '<div class="pathgrid">'+
-    '<button class="pathcard" data-path="source"><span class="em">🛰️</span><h4>Recurring source</h4><p>A feed or API the Radar re-checks about once a day. Best for an ongoing stream of candidates.</p></button>'+
-    '<button class="pathcard" data-path="card"><span class="em">🃏</span><h4>Single card</h4><p>Add one talk, paper or post — just this once, no recurring fetch.</p></button>'+
-    '</div>';
-  el('wiz-foot').style.display='flex';
-  el('wiz-foot').innerHTML='<span class="muted" style="font-size:12.5px;">You\'ll need a GitHub account and a coding agent (Claude Code, Cursor…).</span>';
+    '<button class="pathcard" data-path="card"><span class="em">\ud83c\udccf</span><h4>Add a card</h4><p>Paste any URL \u2014 article, Reddit/X post, paper, video. It becomes a card you review, then enters this month\'s pool.</p></button>'+
+    '<button class="pathcard" data-path="source"><span class="em">\ud83d\udef0\ufe0f</span><h4>Recurring source</h4><p>Paste a site or feed URL. We find its feed and re-check it about once a day for fresh candidates.</p></button>'+
+    '</div>',
+    '<span class="muted" style="font-size:12.5px">Everything is reviewed before it\'s added \u2014 and duplicates are caught automatically.</span>');
   Array.prototype.forEach.call(el('wiz-body').querySelectorAll('.pathcard'),function(c){
-    c.onclick=function(){ wiz.path=c.getAttribute('data-path'); wiz.step=0; renderWiz(); };
+    c.onclick=function(){ wiz.path=c.getAttribute('data-path'); wiz.view=null; wiz.err=''; renderWiz(); };
+  });
+  var cc=el('w-conn'); if(cc) cc.onclick=function(){ wiz.connect=true; wiz.err=''; renderWiz(); };
+  var dc=el('w-disc'); if(dc) dc.onclick=function(){ saveAi(null); renderWiz(); };
+}
+
+// ---- shared helpers ----
+function dedupOpen(title, ed){ closeWiz(); if(ed){ state.edition=ed; state.cardsData=null; } state.cardSearch=title||''; if(route()==='cards'){ render(); } else { location.hash='cards'; } }
+function bindDedupOpens(){
+  ['wiz-body','wiz-foot'].forEach(function(host){
+    var h=el(host); if(!h) return;
+    Array.prototype.forEach.call(h.querySelectorAll('[data-open]'),function(x){
+      x.onclick=function(){ dedupOpen(x.getAttribute('data-open'), x.getAttribute('data-ed')||''); };
+    });
   });
 }
-
-// -- Source path bodies --
-function wizSrcIntro(){
-  return ''+
-  '<p>A <strong>source</strong> is a small file that knows how to fetch candidate cards from somewhere — an RSS feed, a JSON API, a crawler. Adding one is a single-file pull request: no infrastructure, no secrets.</p>'+
-  '<div class="calloutbox">Once your PR is merged, the Radar queries your source <strong>automatically, about once a day</strong>. New items become candidate cards in the current month\'s pool, curators vote them up or down, and the top cards become that month\'s Radar.</div>'+
-  '<p class="muted" style="font-size:12.5px;">You\'ll drive this with a coding agent (Claude Code, Cursor, Copilot…). We\'ll generate the exact prompt to paste in — you won\'t write the code yourself.</p>';
+function dedupBanner(dd){
+  var c=dd.card;
+  var why = dd.reason==='identity' ? 'This exact link is already a candidate' : 'A card with the same title is already in the pool';
+  return '<div class="dedupbox">\u26a0\ufe0f <b>Looks like a duplicate.</b> '+esc(why)+(c.editionLabel?' ('+esc(c.editionLabel)+')':'')+': \u201c'+esc(c.title)+'\u201d.'+
+    '<br><span class="dd-open" data-open="'+esc(c.title)+'" data-ed="'+esc(c.edition||'')+'">View the existing card \u2192</span></div>';
 }
-function wizSrcForm(){
+function cardFormFields(){
   var d=wiz.data;
-  return ''+
-  '<div class="field"><label>Source name</label><input id="w-name" value="'+esc(d.name)+'" placeholder="e.g. Protocol Labs Blog"><div class="hint">File will be created as src/ingest/sources/<span id="w-key">'+esc(wizKey())+'</span>.ts</div></div>'+
-  '<div class="field"><label>Feed or API URL</label><input id="w-url" value="'+esc(d.url)+'" placeholder="https://example.com/feed.xml"></div>'+
-  '<div class="field"><label>Homepage (optional)</label><input id="w-home" value="'+esc(d.homepage)+'" placeholder="https://example.com"></div>'+
-  '<div class="field"><label>What it pulls in</label><textarea id="w-desc" placeholder="One line describing the cards this brings in.">'+esc(d.description)+'</textarea></div>';
+  return '<div class="field"><label>Title</label><input id="f-title" value="'+esc(d.title)+'"></div>'+
+    '<div class="field"><label>URL</label><input id="f-href" value="'+esc(d.href)+'" placeholder="https://\u2026"></div>'+
+    '<div class="field"><label>Description</label><textarea id="f-desc">'+esc(d.description)+'</textarea></div>'+
+    '<div class="field"><label>Focus area</label><select id="f-area">'+AREAS_W.map(function(a){return '<option value="'+a.slug+'"'+(a.slug===d.area?' selected':'')+'>'+esc(a.label)+'</option>';}).join('')+'</select></div>'+
+    '<div class="field"><label>Type</label><select id="f-type">'+TYPES_W.map(function(t){return '<option'+(t===d.type?' selected':'')+'>'+t+'</option>';}).join('')+'</select></div>'+
+    '<div class="field"><label>Source attribution</label><input id="f-src" value="'+esc(d.source)+'" placeholder="Who to credit"></div>';
 }
-function wizSrcPrompt(){
-  return ''+
-  '<p>Open your coding agent inside a clone or fork of the repo — or just point it at the GitHub URL — then paste the prompt below. It will write the file, run a dry-run, and open the pull request for you.</p>'+
-  '<div class="repochip">📦 '+esc(repoShort())+'</div>'+
-  '<ol class="numlist">'+
-  '<li>Open Claude Code, Cursor, or your agent of choice in the repo.</li>'+
-  '<li>Paste the prompt below and let it work.</li>'+
-  '<li>Review the diff, then approve the pull request it opens.</li>'+
-  '</ol>'+
-  '<div class="promptbox"><button class="btn btn-sm copy" id="wiz-copy">Copy</button><pre id="wiz-prompt">'+esc(promptSource())+'</pre></div>';
-}
-function wizSrcAfter(){
-  return ''+
-  '<p>Here\'s the whole lifecycle once you open that pull request:</p>'+
-  '<ol class="numlist">'+
-  '<li>A maintainer reviews and merges your one-file PR.</li>'+
-  '<li>From then on the Radar runs your source <strong>automatically, about once a day</strong>.</li>'+
-  '<li>Fresh items become candidate cards in the current month\'s pool.</li>'+
-  '<li>Curators vote on pairwise match-ups; an Elo ranking sorts the pool.</li>'+
-  '<li>The top cards become that month\'s published Radar.</li>'+
-  '</ol>'+
-  '<div class="calloutbox">Nothing to maintain afterwards — as long as your feed keeps publishing, the Radar keeps picking it up. <a href="'+esc(repoMeta.sourcesDir)+'" target="_blank" rel="noopener">Browse existing sources →</a></div>';
-}
-
-// -- Single-card path bodies --
-function wizCardIntro(){
-  return ''+
-  '<p>A single card is a one-off: you\'re adding one specific talk, paper, post or signal you think belongs on the Radar — with no recurring feed to maintain.</p>'+
-  '<div class="calloutbox">Your card joins the shared <strong>Community picks</strong> source as a fixed entry. It enters the current month\'s pool and competes for a spot like everything else — curators vote it up or down.</div>'+
-  '<p class="muted" style="font-size:12.5px;">You\'ll submit it as a tiny pull request. We\'ll generate the exact prompt for your coding agent — no coding required.</p>';
-}
-function wizCardForm(){
+function readCardForm(){
   var d=wiz.data;
-  return ''+
-  '<div class="field"><label>Title</label><input id="w-title" value="'+esc(d.title)+'" placeholder="Title of the talk / paper / post"></div>'+
-  '<div class="field"><label>URL</label><input id="w-curl" value="'+esc(d.cardUrl)+'" placeholder="https://…"></div>'+
-  '<div class="field"><label>Description</label><textarea id="w-cdesc" placeholder="A sentence or two on why it matters.">'+esc(d.cardDesc)+'</textarea></div>'+
-  '<div class="field"><label>Focus area</label><select id="w-area">'+AREAS_W.map(function(a){ return '<option value="'+a.slug+'"'+(a.slug===d.area?' selected':'')+'>'+esc(a.label)+'</option>'; }).join('')+'</select></div>'+
-  '<div class="field"><label>Type</label><select id="w-type">'+TYPES_W.map(function(t){ return '<option'+(t===d.type?' selected':'')+'>'+t+'</option>'; }).join('')+'</select></div>'+
-  '<div class="field"><label>Source attribution (optional)</label><input id="w-src" value="'+esc(d.source)+'" placeholder="Who to credit, e.g. MIT, a16z, author name"></div>';
-}
-function wizCardPrompt(){
-  return ''+
-  '<p>Paste the prompt below into your coding agent. It will add your card to the Community picks source and open the pull request.</p>'+
-  '<div class="repochip">📦 '+esc(repoShort())+'</div>'+
-  '<ol class="numlist">'+
-  '<li>Open Claude Code, Cursor, or your agent of choice in the repo.</li>'+
-  '<li>Paste the prompt below and let it work.</li>'+
-  '<li>Review the diff, then approve the pull request it opens.</li>'+
-  '</ol>'+
-  '<div class="promptbox"><button class="btn btn-sm copy" id="wiz-copy">Copy</button><pre id="wiz-prompt">'+esc(promptCard())+'</pre></div>';
-}
-function wizCardAfter(){
-  return ''+
-  '<ol class="numlist">'+
-  '<li>A maintainer reviews and merges your PR.</li>'+
-  '<li>On the next daily run your card enters the current month\'s pool.</li>'+
-  '<li>Curators vote on it in pairwise match-ups.</li>'+
-  '<li>If it earns enough support, it lands in the published Radar.</li>'+
-  '</ol>'+
-  '<div class="calloutbox">One card, one time — there\'s nothing to maintain. Want an ongoing stream instead? <a href="#" id="wiz-toseg">Add a recurring source →</a></div>';
+  if(el('f-title')) d.title=el('f-title').value.trim();
+  if(el('f-href')) d.href=el('f-href').value.trim();
+  if(el('f-desc')) d.description=el('f-desc').value.trim();
+  if(el('f-area')) d.area=el('f-area').value;
+  if(el('f-type')) d.type=el('f-type').value;
+  if(el('f-src')) d.source=el('f-src').value.trim();
 }
 
-// -- Prompt generators --
+// ---- card path ----
+function renderCard(){
+  if(!SUBMIT.enabled){ renderAgentCard(); return; }
+  var v=wiz.view;
+  if(v==='review'){ renderCardReview(); return; }
+  if(v==='duplicate'){ renderCardDuplicate(); return; }
+  if(v==='success'){ renderCardSuccess(); return; }
+  if(v==='manual'){ renderCardManual(); return; }
+  if(v==='agent'){ renderAgentCard(); return; }
+  renderCardInput();
+}
+function renderCardInput(){
+  var connected=aiOn();
+  var conn = connected
+    ? '<p class="subnote">\u2713 Claude connected \u2014 paste a link and it drafts the card. <button class="altlink" id="w-disc">Disconnect</button></p>'
+    : '<p class="subnote"><button class="altlink" id="w-conn">Connect Claude</button> to auto-draft from any link \u2014 or just fetch the page and fill it in.</p>';
+  setWiz('Add a card','Paste a URL',
+    '<p class="subnote">Paste a link to anything \u2014 a news article, a Reddit or X post, a paper, a video.</p>'+conn+
+    '<div class="urlrow"><input id="w-url" placeholder="https://\u2026" value="'+esc(wiz.data.href)+'"><button class="btn" id="w-parse">'+(connected?'Draft with Claude \u2192':'Fetch details \u2192')+'</button></div>'+
+    errHtml()+
+    '<button class="altlink" id="w-manual">Or enter the details manually \u2192</button>',
+    '<button class="btn-ghost" id="w-back">\u2190 Back</button><span></span>');
+  el('w-back').onclick=function(){ wiz.path=null; wiz.err=''; renderWiz(); };
+  el('w-url').addEventListener('keydown',function(e){ if(e.key==='Enter') doParseCard(); });
+  el('w-parse').onclick=doParseCard;
+  el('w-manual').onclick=function(){ wiz.data.href=el('w-url').value.trim(); wiz.view='manual'; wiz.err=''; renderWiz(); };
+  var c=el('w-conn'); if(c) c.onclick=function(){ wiz.connect=true; wiz.err=''; renderWiz(); };
+  var dc=el('w-disc'); if(dc) dc.onclick=function(){ saveAi(null); renderWiz(); };
+}
+function setDraftFromExtract(j){
+  var d=j.draft||{};
+  wiz.meta=j.meta||{};
+  wiz.data.title=d.title||''; wiz.data.description=d.description||''; wiz.data.href=d.href||wiz.data.href;
+  wiz.data.area=d.areaSlug||'ai-robotics'; wiz.data.type=d.type||'Signal'; wiz.data.source=d.source||''; wiz.data.image=(d.image!=null?d.image:null); wiz.data.angle=''; wiz.data.rationale='';
+}
+function applyAiDraft(txt){
+  var o=extractJson(txt), d=wiz.data;
+  if(o.title) d.title=String(o.title).slice(0,140);
+  if(o.description) d.description=String(o.description).slice(0,400);
+  var a=clampArea(o.areaSlug); if(a) d.area=a;
+  var t=clampType(o.type); if(t) d.type=t;
+  var g=clampAngle(o.angle); if(g) d.angle=g;
+  if(o.source) d.source=String(o.source).slice(0,60);
+  if(o.rationale) d.rationale=String(o.rationale).slice(0,200);
+}
+function recheckDedupThenReview(){
+  post('/api/submit/dedup',{href:wiz.data.href,title:wiz.data.title,image:wiz.data.image}).then(function(r){
+    wiz.dedup=(r.body&&r.body.duplicate)||null; wiz.view='review'; renderWiz();
+  },function(){ wiz.view='review'; renderWiz(); });
+}
+function doParseCard(){
+  var url=(el('w-url')?el('w-url').value:wiz.data.href).trim();
+  if(!/^https?:\/\//i.test(url)){ wiz.err='Enter a full URL that starts with http.'; renderWiz(); return; }
+  wiz.data.href=url; wiz.err='';
+  var withAI=aiOn();
+  setWiz(withAI?'Reading the page\u2026':'Fetching details\u2026', withAI?'Claude is drafting your card':'Reading the page',
+    '<div class="parsing"><span class="spin"></span>'+(withAI?'Fetching + drafting from ':'Fetching ')+esc(url.slice(0,60))+'\u2026</div>','');
+  post('/api/submit/extract',{url:url}).then(function(r){
+    var j=r.body||{};
+    if(!j.ok){
+      if(j.reason==='bad-url'){ wiz.err='That doesn\'t look like a valid URL.'; wiz.view=null; renderWiz(); return; }
+      if(j.reason==='rate-limited'){ wiz.err='Too many requests \u2014 give it a minute.'; wiz.view=null; renderWiz(); return; }
+      wiz.err=(j.message||'Couldn\'t read that page.')+' Add the details manually below.'; wiz.view='manual'; renderWiz(); return;
+    }
+    setDraftFromExtract(j); wiz.dedup=j.duplicate||null;
+    if(!withAI){ wiz.view='manual'; renderWiz(); return; }
+    callClaude(CARD_SYSTEM, cardUserPrompt(j.meta||{})).then(function(txt){
+      try{ applyAiDraft(txt); }catch(e){}
+      recheckDedupThenReview();
+    }, function(e){
+      if(e&&e.status===401){ saveAi(null); wiz.err='Your Claude key was rejected \u2014 reconnect, or edit the scraped draft below.'; }
+      else { wiz.err='Claude couldn\'t draft it \u2014 here\'s what we scraped; edit and add.'; }
+      wiz.view='manual'; renderWiz();
+    });
+  }).catch(function(){ wiz.err='Network error. Add the details manually below.'; wiz.view='manual'; renderWiz(); });
+}
+function renderCardReview(){
+  var d=wiz.data, g=area(d.area);
+  var media = d.image ? '<div class="draftprev"><div class="dp-media" style="background:'+g.g+'"><img src="'+esc(d.image)+'" onerror="this.parentNode.parentNode.style.display=\'none\'"><span class="dp-area" style="background:'+g.c+'">'+esc(areaName(d.area))+'</span></div></div>' : '';
+  setWiz('Review your card', aiOn()?'Claude drafted this \u2014 tweak anything':'From the page \u2014 tweak anything',
+    (wiz.dedup?dedupBanner(wiz.dedup):'')+errHtml()+
+    (d.rationale?'<p class="rationale">'+esc(d.rationale)+'</p>':'')+
+    media+cardFormFields(),
+    '<button class="btn-ghost" id="w-back">\u2190 Start over</button><button class="btn" id="w-add">Add to Radar \u2192</button>');
+  el('w-back').onclick=function(){ wiz.view=null; wiz.dedup=null; wiz.err=''; renderWiz(); };
+  el('w-add').onclick=doSubmitCard;
+  bindDedupOpens();
+}
+function renderCardManual(){
+  var connectHint = aiOn() ? '' : '<p class="subnote"><button class="altlink" id="w-conn">Connect Claude</button> to auto-draft next time.</p>';
+  setWiz('Add a card','Fill in the details',
+    errHtml()+
+    '<p class="subnote">Fill in as much as you can and add it straight to the pool \u2014 or hand it to your own coding agent to open a pull request.</p>'+connectHint+
+    cardFormFields(),
+    '<button class="altlink" id="w-agent">Prepare a PR for my agent \u2192</button><button class="btn" id="w-add">Add to Radar \u2192</button>');
+  el('w-add').onclick=doSubmitCard;
+  el('w-agent').onclick=function(){ readCardForm(); wiz.view='agent'; renderWiz(); };
+  var c=el('w-conn'); if(c) c.onclick=function(){ readCardForm(); wiz.connect=true; renderWiz(); };
+}
+function doSubmitCard(){
+  readCardForm();
+  var d=wiz.data;
+  if(!d.title || !/^https?:\/\//i.test(d.href) || !d.area){ wiz.err='A title, a valid URL and a focus area are required.'; renderWiz(); return; }
+  wiz.err=''; var ab=el('w-add'); if(ab){ ab.disabled=true; ab.textContent='Adding\u2026'; }
+  post('/api/submit/card',{title:d.title,href:d.href,description:d.description,areaSlug:d.area,type:d.type,source:d.source,angle:d.angle,image:d.image}).then(function(r){
+    var j=r.body||{};
+    if(j.ok){ wiz.result=j.card; wiz.view='success'; renderWiz(); return; }
+    if(j.reason==='duplicate'){ wiz.dedup=j.duplicate; wiz.view='duplicate'; renderWiz(); return; }
+    if(j.reason==='rate-limited'){ wiz.err='Too many requests \u2014 give it a minute.'; renderWiz(); return; }
+    if(j.reason==='incomplete'){ wiz.err='A title, URL and focus area are required.'; renderWiz(); return; }
+    wiz.err='Could not add the card. Please try again.'; renderWiz();
+  }).catch(function(){ wiz.err='Network error while adding the card.'; renderWiz(); });
+}
+function renderCardDuplicate(){
+  var c=wiz.dedup.card;
+  var why = wiz.dedup.reason==='identity' ? 'That link is already a candidate this cycle.' : 'A card with the same title is already competing.';
+  setWiz('Already on the Radar','This one\'s a duplicate',
+    '<div class="dedupbox">\u26a0\ufe0f <b>Not added \u2014 it\'s already here.</b><br>'+esc(why)+'</div>'+
+    '<p class="subnote">The existing card:</p>'+
+    '<div class="draftprev" style="padding:14px 16px"><div class="kicker">'+esc(c.areaLabel||'')+(c.editionLabel?' \u00b7 '+esc(c.editionLabel):'')+'</div>'+
+      '<h4 style="font-family:Newsreader,serif;font-size:19px;margin:6px 0 8px">'+esc(c.title)+'</h4>'+
+      '<a href="'+esc(c.href)+'" target="_blank" rel="noopener">Open source \u2192</a></div>',
+    '<button class="btn-ghost" id="w-back">\u2190 Add a different one</button><button class="btn" data-open="'+esc(c.title)+'" data-ed="'+esc(c.edition||'')+'">View in Cards \u2192</button>');
+  el('w-back').onclick=function(){ wiz.view=null; wiz.dedup=null; wiz.err=''; wiz.data.href=''; wiz.data.title=''; renderWiz(); };
+  bindDedupOpens();
+}
+function renderCardSuccess(){
+  var c=wiz.result||{};
+  setWiz('Card added','It\'s in the pool',
+    '<div class="okbox"><div class="okc">\u2713</div><h4>Added to the '+esc(c.editionLabel||'Radar')+'</h4>'+
+    '<p class="subnote">\u201c'+esc(c.title)+'\u201d is now a candidate. Curators will start seeing it in match-ups.</p></div>',
+    '<button class="btn-ghost" id="w-again">Add another</button><button class="btn" data-open="'+esc(c.title)+'" data-ed="'+esc(c.edition||'')+'">View in Cards \u2192</button>');
+  el('w-again').onclick=function(){ wiz.view=null; wiz.dedup=null; wiz.err=''; wiz.data.href=''; wiz.data.title=''; wiz.data.description=''; wiz.data.image=null; wiz.data.rationale=''; renderWiz(); };
+  bindDedupOpens();
+}
+function renderAgentCard(){
+  setWiz('Hand it to your agent','One-file pull request',
+    '<p class="subnote">Paste this into Claude Code, Cursor, or your agent of choice \u2014 it adds your card to the shared Community source and opens a pull request.</p>'+
+    '<div class="repochip">\ud83d\udce6 '+esc(repoShort())+'</div>'+
+    '<div class="promptbox"><button class="btn btn-sm copy" id="wiz-copy">Copy</button><pre id="wiz-prompt">'+esc(promptCard())+'</pre></div>',
+    '<button class="btn-ghost" id="w-back">\u2190 Back</button><span class="muted" style="font-size:12px">Review the diff before you approve it.</span>');
+  el('w-back').onclick=function(){ if(SUBMIT.enabled){ wiz.view='manual'; } else { wiz.path=null; } renderWiz(); };
+  bindWizCopy();
+}
+
+// ---- source path ----
+function renderSource(){
+  if(!SUBMIT.enabled){ renderAgentSource(); return; }
+  var v=wiz.view;
+  if(v==='review'){ renderSourceReview(); return; }
+  if(v==='success'){ renderSourceSuccess(); return; }
+  if(v==='agent'){ renderAgentSource(); return; }
+  renderSourceInput();
+}
+function renderSourceInput(){
+  setWiz('Add a recurring source','Paste a site or feed URL',
+    '<p class="subnote">Paste a site or feed URL. We find its RSS/Atom feed, preview the cards it would add, and re-check it about once a day. There\'s no manual fallback here \u2014 it needs a real feed.</p>'+
+    '<div class="urlrow"><input id="w-url" placeholder="https://example.com or /feed.xml" value="'+esc(wiz.data.feedUrl)+'"><button class="btn" id="w-parse">Find feed \u2192</button></div>'+
+    errHtml()+
+    '<button class="altlink" id="w-agent">Advanced: add via a code PR instead \u2192</button>',
+    '<button class="btn-ghost" id="w-back">\u2190 Back</button><span></span>');
+  el('w-back').onclick=function(){ wiz.path=null; wiz.err=''; renderWiz(); };
+  el('w-url').addEventListener('keydown',function(e){ if(e.key==='Enter') doParseSource(); });
+  el('w-parse').onclick=doParseSource;
+  el('w-agent').onclick=function(){ wiz.view='agent'; renderWiz(); };
+}
+function doParseSource(){
+  var url=el('w-url').value.trim();
+  if(!/^https?:\/\//i.test(url)){ wiz.err='Enter a full URL that starts with http.'; renderWiz(); return; }
+  wiz.data.feedUrl=url; wiz.err='';
+  setWiz('Finding the feed\u2026','Reading the site','<div class="parsing"><span class="spin"></span>Looking for a feed at '+esc(url.slice(0,60))+'\u2026</div>','');
+  post('/api/submit/source/parse',{url:url}).then(function(r){
+    var j=r.body||{};
+    if(!j.ok){
+      if(j.reason==='no-feed'){ wiz.err=j.message||'No RSS/Atom feed found at that URL.'; }
+      else if(j.reason==='bad-url'){ wiz.err='That doesn\'t look like a valid URL.'; }
+      else if(j.reason==='rate-limited'){ wiz.err='Too many requests \u2014 give it a minute.'; }
+      else wiz.err=j.message||'Could not read that URL.';
+      wiz.view=null; renderWiz(); return;
+    }
+    var d=j.draft;
+    wiz.data.name=d.name||''; wiz.data.feedUrl=d.feedUrl||url; wiz.data.homepage=d.homepage||''; wiz.data.srcDesc=d.description||''; wiz.data.srcArea='';
+    wiz.sample=d.sample||[]; wiz.dedup=j.duplicate||null; wiz.inPool=j.samplesAlreadyInPool||0;
+    if(aiOn()){
+      callClaude(SOURCE_SYSTEM, sourceUserPrompt(d)).then(function(txt){
+        try{ var o=extractJson(txt); if(o.name) wiz.data.name=String(o.name).slice(0,60); if(o.description) wiz.data.srcDesc=String(o.description).slice(0,140); }catch(e){}
+        wiz.view='review'; renderWiz();
+      }, function(){ wiz.view='review'; renderWiz(); });
+    } else { wiz.view='review'; renderWiz(); }
+  }).catch(function(){ wiz.err='Network error.'; wiz.view=null; renderWiz(); });
+}
+function renderSourceReview(){
+  var d=wiz.data;
+  var dup = wiz.dedup ? '<div class="dedupbox">\u26a0\ufe0f <b>Already tracked.</b> We\'re already polling \u201c'+esc(wiz.dedup.name)+'\u201d ('+esc(wiz.dedup.feedUrl)+'). Adding it again is blocked.</div>' : '';
+  var samples=(wiz.sample||[]).map(function(s){ var g=area(s.areaSlug); return '<li><span class="sdot" style="background:'+g.c+'"></span><span style="flex:1">'+esc(s.title)+'</span><span class="stype">'+esc(s.type)+'</span></li>'; }).join('');
+  var poolNote = wiz.inPool ? '<p class="subnote">'+wiz.inPool+' of these are already in the pool \u2014 they\'ll dedup automatically.</p>' : '';
+  var addBtn = wiz.dedup ? '' : '<button class="btn" id="w-add">Add source \u2192</button>';
+  setWiz('Review the source','We found this feed',
+    dup+errHtml()+
+    '<div class="field"><label>Source name</label><input id="s-name" value="'+esc(d.name)+'"></div>'+
+    '<div class="field"><label>Description</label><textarea id="s-desc">'+esc(d.srcDesc)+'</textarea></div>'+
+    '<div class="field"><label>Feed URL</label><input id="s-feed" value="'+esc(d.feedUrl)+'"></div>'+
+    '<div class="field"><label>Force focus area (optional)</label><select id="s-area"><option value="">Infer per item</option>'+AREAS_W.map(function(a){return '<option value="'+a.slug+'">'+esc(a.label)+'</option>';}).join('')+'</select></div>'+
+    (samples?'<p class="subnote" style="margin-bottom:2px">Preview \u2014 cards this feed would add now:</p><ul class="samplelist">'+samples+'</ul>':'')+
+    poolNote,
+    '<button class="btn-ghost" id="w-back">\u2190 Try another</button>'+addBtn);
+  el('w-back').onclick=function(){ wiz.view=null; wiz.err=''; wiz.dedup=null; renderWiz(); };
+  var ab=el('w-add'); if(ab) ab.onclick=doSubmitSource;
+}
+function doSubmitSource(){
+  var d=wiz.data;
+  if(el('s-name')) d.name=el('s-name').value.trim();
+  if(el('s-desc')) d.srcDesc=el('s-desc').value.trim();
+  if(el('s-feed')) d.feedUrl=el('s-feed').value.trim();
+  if(el('s-area')) d.srcArea=el('s-area').value;
+  if(!d.name || !/^https?:\/\//i.test(d.feedUrl)){ wiz.err='A name and a valid feed URL are required.'; renderWiz(); return; }
+  wiz.err=''; var ab=el('w-add'); if(ab){ ab.disabled=true; ab.textContent='Adding\u2026'; }
+  post('/api/submit/source',{name:d.name,description:d.srcDesc,feedUrl:d.feedUrl,homepage:d.homepage,areaSlug:d.srcArea}).then(function(r){
+    var j=r.body||{};
+    if(j.ok){ wiz.result=j.source; wiz.view='success'; renderWiz(); return; }
+    if(j.reason==='duplicate'){ wiz.dedup=j.duplicate; renderWiz(); return; }
+    if(j.reason==='rate-limited'){ wiz.err='Too many requests \u2014 give it a minute.'; renderWiz(); return; }
+    wiz.err='Could not add the source. Please try again.'; renderWiz();
+  }).catch(function(){ wiz.err='Network error while adding the source.'; renderWiz(); });
+}
+function renderSourceSuccess(){
+  var s=wiz.result||{};
+  setWiz('Source added','It\'s live',
+    '<div class="okbox"><div class="okc">\u2713</div><h4>Source added</h4>'+
+    '<p class="subnote">\u201c'+esc(s.name)+'\u201d is now polled about once a day. New items become candidate cards automatically \u2014 duplicates are merged.</p></div>',
+    '<button class="btn-ghost" id="w-again">Add another</button><button class="btn" id="w-done">Done</button>');
+  el('w-again').onclick=function(){ wiz.view=null; wiz.data.feedUrl=''; wiz.data.name=''; wiz.dedup=null; wiz.err=''; renderWiz(); };
+  el('w-done').onclick=function(){ closeWiz(); if(route()==='sources') renderSources(); };
+}
+function renderAgentSource(){
+  setWiz('Add a source via a PR','One-file pull request',
+    '<p class="subnote">Prefer a code-defined source? Paste this into your coding agent \u2014 it writes the source file and opens a pull request.</p>'+
+    '<div class="repochip">\ud83d\udce6 '+esc(repoShort())+'</div>'+
+    '<div class="promptbox"><button class="btn btn-sm copy" id="wiz-copy">Copy</button><pre id="wiz-prompt">'+esc(promptSource())+'</pre></div>',
+    '<button class="btn-ghost" id="w-back">\u2190 Back</button><span class="muted" style="font-size:12px">Review the diff before approving.</span>');
+  el('w-back').onclick=function(){ if(SUBMIT.enabled){ wiz.view=null; } else { wiz.path=null; } renderWiz(); };
+  bindWizCopy();
+}
+
+// ---- agent prompt generators (manual / PR fallback) ----
 function promptSource(){
-  var d=wiz.data, k=wizKey(), r=repoMeta.repoUrl;
+  var d=wiz.data, k=wizSlug(d.name)||'my-source', r=repoMeta.repoUrl;
   return [
 'You are helping me add a new data source to the PL R&D Radar crowd-curation project.',
 '',
@@ -1264,9 +1552,9 @@ function promptSource(){
 '',
 'GOAL: add an ingestion source that pulls candidate cards from:',
 '  - Source name: '+(d.name||'(name)'),
-'  - Feed / API URL: '+(d.url||'(url)'),
+'  - Feed / API URL: '+(d.feedUrl||'(url)'),
 '  - Homepage: '+(d.homepage||'(none)'),
-'  - What it pulls in: '+(d.description||'(one-line description)'),
+'  - What it pulls in: '+(d.srcDesc||'(one-line description)'),
 '',
 'STEPS:',
 '1. Read src/ingest/README.md and src/ingest/types.ts to learn the Source contract.',
@@ -1290,8 +1578,8 @@ function promptCard(){
 '',
 'CARD TO ADD:',
 '  - Title: '+(d.title||'(title)'),
-'  - URL: '+(d.cardUrl||'(url)'),
-'  - Description: '+(d.cardDesc||'(one or two sentences)'),
+'  - URL: '+(d.href||'(url)'),
+'  - Description: '+(d.description||'(one or two sentences)'),
 '  - Focus area (areaSlug): '+d.area,
 '  - Type: '+d.type,
 '  - Source attribution: '+(d.source||'Community'),
@@ -1306,24 +1594,14 @@ function promptCard(){
   ].join('\n');
 }
 
-function bindWizInputs(){
-  var map={ 'w-name':'name','w-url':'url','w-home':'homepage','w-desc':'description',
-    'w-title':'title','w-curl':'cardUrl','w-cdesc':'cardDesc','w-src':'source','w-area':'area','w-type':'type' };
-  Object.keys(map).forEach(function(id){
-    var e=el(id); if(!e) return;
-    var upd=function(){ wiz.data[map[id]]=e.value; var kh=el('w-key'); if(kh) kh.textContent=wizKey(); };
-    e.addEventListener('input',upd); e.addEventListener('change',upd);
-  });
-}
 function bindWizCopy(){ var b=el('wiz-copy'); if(b) b.onclick=function(){ wizCopy('wiz-prompt',b); }; }
 function wizCopy(id, btn){
   var txt=el(id).textContent;
-  var done=function(){ var o=btn.getAttribute('data-lbl')||btn.textContent; btn.setAttribute('data-lbl',o); btn.textContent='Copied ✓'; setTimeout(function(){ btn.textContent=o; },1400); };
+  var done=function(){ var o=btn.getAttribute('data-lbl')||btn.textContent; btn.setAttribute('data-lbl',o); btn.textContent='Copied \u2713'; setTimeout(function(){ btn.textContent=o; },1400); };
   if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(done,function(){ fallbackCopy(txt); done(); }); }
   else { fallbackCopy(txt); done(); }
 }
 function fallbackCopy(t){ var ta=document.createElement('textarea'); ta.value=t; ta.style.position='fixed'; ta.style.opacity='0'; document.body.appendChild(ta); ta.select(); try{ document.execCommand('copy'); }catch(e){} document.body.removeChild(ta); }
-
 // ---- Modal ----
 function openCard(c){
   if(!c) return;

@@ -44,9 +44,17 @@ import {
 } from '../ranking/strength.js'
 import { composeCut } from '../ranking/compose.js'
 import { renderDashboard } from './dashboard.js'
-import { currentEdition, activeEdition, editionLabel } from '../config.js'
-import { SOURCES } from '../ingest/sources/index.js'
+import {
+  currentEdition,
+  activeEdition,
+  editionLabel,
+  submitEnabled,
+} from '../config.js'
+import { allSources } from '../ingest/sources/index.js'
 import { activeCardCountByKeyPrefix } from '../ingest/stats.js'
+import { extractCardDraft, discoverSource, NoFeedError } from '../submit/parse.js'
+import { FetchFailedError } from '../submit/fetch.js'
+import { findDuplicate } from '../submit/dedup.js'
 
 const REPO_URL = 'https://github.com/lksbrssr/plrd-radar-curator'
 
@@ -344,7 +352,7 @@ export function createServer() {
       repoUrl: REPO_URL,
       sourcesDir: `${REPO_URL}/tree/main/src/ingest/sources`,
       guideUrl: `${REPO_URL}/blob/main/src/ingest/README.md`,
-      sources: SOURCES.map((s) => ({
+      sources: allSources().map((s) => ({
         key: s.key,
         name: s.name,
         description: s.description,
@@ -353,6 +361,206 @@ export function createServer() {
         cards: s.keyPrefix ? activeCardCountByKeyPrefix(s.keyPrefix) : 0,
       })),
     })
+  })
+
+  // --- Card / source submission -------------------------------------------
+  // Submission is OPEN like in-browser voting: anyone can propose a card and the
+  // crowd votes it up or down. The AI drafting is bring-your-own-key and runs in
+  // the user's browser (their Anthropic key, their tokens) — the server holds no
+  // API key. The server only fetches the page, dedups, and persists. A light
+  // per-IP rate limit + SSRF guard (see submit/fetch.ts) keep it from being
+  // abused as a spam funnel or an open proxy.
+  app.get('/api/submit/status', (_req, res) => {
+    res.json({ enabled: submitEnabled() })
+  })
+
+  // Tiny in-memory per-IP rate limiter (process-local; fine for one machine).
+  const submitHits = new Map<string, number[]>()
+  function rateLimited(req: express.Request, res: express.Response, max = 20, windowMs = 60_000): boolean {
+    if (!submitEnabled()) {
+      res.status(503).json({ ok: false, reason: 'disabled' })
+      return true
+    }
+    const ip = req.ip || 'unknown'
+    const now = Date.now()
+    const hits = (submitHits.get(ip) || []).filter((t) => now - t < windowMs)
+    if (hits.length >= max) {
+      res.status(429).json({ ok: false, reason: 'rate-limited' })
+      return true
+    }
+    hits.push(now)
+    submitHits.set(ip, hits)
+    return false
+  }
+
+  function dupPayload(hit: NonNullable<ReturnType<typeof findDuplicate>>) {
+    const c = hit.card
+    return {
+      reason: hit.reason,
+      card: {
+        key: c.key,
+        title: c.title,
+        href: c.href,
+        edition: c.edition,
+        editionLabel: c.edition ? editionLabel(c.edition) : null,
+        image: c.image ?? null,
+        areaLabel: c.area_label,
+      },
+    }
+  }
+
+  // Paste a URL → the server fetches the page and returns its metadata + a
+  // heuristic draft, plus an up-front dedup check. The BROWSER then optionally
+  // refines the draft with the user's own LLM before showing the review form;
+  // if no key is connected, the heuristic draft prefills the manual form.
+  app.post('/api/submit/extract', async (req, res) => {
+    if (rateLimited(req, res)) return
+    const url = String((req.body ?? {}).url || '').trim()
+    if (!/^https?:\/\/\S+$/i.test(url)) {
+      return res.status(400).json({ ok: false, reason: 'bad-url' })
+    }
+    try {
+      const { meta, draft } = await extractCardDraft(url)
+      const hit = findDuplicate({ href: draft.href, image: draft.image, title: draft.title })
+      res.json({
+        ok: true,
+        meta: {
+          title: meta.title,
+          description: meta.description,
+          image: meta.image,
+          siteName: meta.siteName,
+          finalUrl: meta.finalUrl,
+          text: meta.text,
+        },
+        draft,
+        duplicate: hit ? dupPayload(hit) : null,
+      })
+    } catch (err) {
+      if (err instanceof FetchFailedError) {
+        return res.json({ ok: false, reason: 'fetch', message: err.message })
+      }
+      console.error('[submit] extract failed:', err)
+      res.json({ ok: false, reason: 'fetch', message: 'Could not read that page.' })
+    }
+  })
+
+  // Re-run dedup against a (possibly AI-rewritten) title/href, so the review
+  // screen can warn before the user hits save.
+  app.post('/api/submit/dedup', (req, res) => {
+    if (rateLimited(req, res, 60)) return
+    const b = req.body ?? {}
+    const href = String(b.href || '').trim()
+    if (!/^https?:\/\/\S+$/i.test(href)) return res.json({ ok: true, duplicate: null })
+    const hit = findDuplicate({
+      href,
+      image: typeof b.image === 'string' ? b.image : null,
+      title: typeof b.title === 'string' ? b.title : undefined,
+    })
+    res.json({ ok: true, duplicate: hit ? dupPayload(hit) : null })
+  })
+
+  // Commit a reviewed/edited card draft. Re-runs dedup at write time (the pool
+  // may have changed since parse) and refuses duplicates with the existing card
+  // so the UI can link to it. Otherwise files it into the open edition.
+  app.post('/api/submit/card', (req, res) => {
+    if (rateLimited(req, res)) return
+    const b = req.body ?? {}
+    const title = String(b.title || '').trim()
+    const href = String(b.href || '').trim()
+    const areaSlug = String(b.areaSlug || '').trim()
+    if (!title || !/^https?:\/\/\S+$/i.test(href) || !areaSlug) {
+      return res.status(400).json({ ok: false, reason: 'incomplete' })
+    }
+    const area = FOCUS_AREAS.find((a) => a.slug === areaSlug)
+    if (!area) return res.status(400).json({ ok: false, reason: 'bad-area' })
+
+    const hit = findDuplicate({ href, image: b.image ?? null, title })
+    if (hit) return res.status(409).json({ ok: false, reason: 'duplicate', duplicate: dupPayload(hit) })
+
+    const { card } = repo.submitCommunityCard({
+      title,
+      description: typeof b.description === 'string' ? b.description : null,
+      href,
+      source: typeof b.source === 'string' && b.source ? b.source : 'Community',
+      areaSlug,
+      areaLabel: area.label,
+      type: typeof b.type === 'string' && b.type ? b.type : 'Signal',
+      image: typeof b.image === 'string' && b.image ? b.image : null,
+      angle: typeof b.angle === 'string' && b.angle ? b.angle : null,
+    })
+    res.json({
+      ok: true,
+      card: {
+        key: card.key,
+        title: card.title,
+        href: card.href,
+        edition: card.edition,
+        editionLabel: card.edition ? editionLabel(card.edition) : null,
+        areaLabel: card.area_label,
+      },
+    })
+  })
+
+  // Paste a site/feed URL → discover its RSS feed, preview the cards it would
+  // produce, and dedup against feeds we already poll. There is NO manual
+  // fallback here (by design): if we can't find a usable feed we just say so.
+  app.post('/api/submit/source/parse', async (req, res) => {
+    if (rateLimited(req, res)) return
+    const url = String((req.body ?? {}).url || '').trim()
+    if (!/^https?:\/\/\S+$/i.test(url)) {
+      return res.status(400).json({ ok: false, reason: 'bad-url' })
+    }
+    try {
+      const draft = await discoverSource(url)
+      const existing = repo.getFeedSourceByUrl(draft.feedUrl)
+      const inPool = draft.sample.filter((s) => findDuplicate({ href: s.href })).length
+      res.json({
+        ok: true,
+        draft,
+        duplicate: existing
+          ? { name: existing.name, feedUrl: existing.feed_url }
+          : null,
+        samplesAlreadyInPool: inPool,
+      })
+    } catch (err) {
+      if (err instanceof NoFeedError) {
+        return res.json({ ok: false, reason: 'no-feed', message: err.message })
+      }
+      console.error('[submit] source parse failed:', err)
+      res.json({ ok: false, reason: 'error', message: 'Could not read that URL.' })
+    }
+  })
+
+  // Persist a reviewed recurring source. From here the normal background ingest
+  // polls it on schedule (see scheduler.ts) — no code PR, no restart.
+  app.post('/api/submit/source', (req, res) => {
+    if (rateLimited(req, res)) return
+    const b = req.body ?? {}
+    const name = String(b.name || '').trim()
+    const feedUrl = String(b.feedUrl || '').trim()
+    if (!name || !/^https?:\/\/\S+$/i.test(feedUrl)) {
+      return res.status(400).json({ ok: false, reason: 'incomplete' })
+    }
+    const existing = repo.getFeedSourceByUrl(feedUrl)
+    if (existing) {
+      return res.status(409).json({
+        ok: false,
+        reason: 'duplicate',
+        duplicate: { name: existing.name, feedUrl: existing.feed_url },
+      })
+    }
+    const areaSlug =
+      typeof b.areaSlug === 'string' && FOCUS_AREAS.some((a) => a.slug === b.areaSlug)
+        ? b.areaSlug
+        : null
+    const src = repo.addFeedSource({
+      name,
+      description: typeof b.description === 'string' ? b.description : null,
+      feedUrl,
+      homepage: typeof b.homepage === 'string' && b.homepage ? b.homepage : null,
+      areaSlug,
+    })
+    res.json({ ok: true, source: { key: src.key, name: src.name, feedUrl: src.feed_url } })
   })
 
   // Everything the Data view needs, in one call. Preference is decomposed with

@@ -8,6 +8,13 @@ so a talk published in June lands in the June Radar and a July post in July. By
 default ingestion only accepts an allowlist of editions (currently **June & July
 2026**); older content is out of scope.
 
+There are three kinds of source: **code-defined** (a file in this folder),
+**dynamic** (a recurring feed people add through the web app, stored in the
+`feed_sources` table and surfaced by `sources/dynamic.ts`), and one-off
+**community cards** (submitted through the web app, filed under the `community`
+key). All three flow through the same content/dedup layer and ingest engine
+(`allSources()` in `sources/index.ts` returns code + dynamic together).
+
 ## Built-in sources
 
 - **`plrd-insights`** — talks, podcasts, publications & posts from
@@ -34,10 +41,37 @@ id), the next ingest detects the stale URL-content for the same link and merges
 it into the canonical content — migrating any votes onto the surviving card and
 keeping both provenances. So re-running ingest reconciles old duplicates too.
 
-**Runs automatically:** the full (bot) process re-ingests every source every
-`INGEST_INTERVAL_HOURS` (default 3; `0` disables), so the pool stays deduped as
-sources publish without anyone running the CLI. Because dedup happens on write,
-any newly-added card is deduped as it lands.
+**Runs automatically:** the full (bot) process re-ingests every source (code
+**and** dynamic DB feeds) every `INGEST_INTERVAL_HOURS` (default 3; `0` disables),
+so the pool stays deduped as sources publish without anyone running the CLI.
+Because dedup happens on write, any newly-added card is deduped as it lands.
+
+## Add a card or source from the web app (bring-your-own-Claude)
+
+The **Sources → Add a card or source** panel is the zero-code path. Submission
+is open like in-browser voting; the AI drafting is **bring-your-own-key** — each
+user connects their OWN Anthropic key in the browser and the model call goes
+**straight from their browser to Anthropic**, so the server never holds a key or
+spends tokens. (Set `SUBMIT_DISABLED=1` to turn the whole surface off.)
+
+- **Add a card:** paste *any* URL (article, Reddit/X post, paper, video). The
+  server fetches the page (SSRF-guarded) and returns its metadata + a heuristic
+  draft; if the user has connected Claude, their browser refines it into a
+  polished card (title, description, area, type, angle, attribution). You
+  review/edit before it lands in the open edition as a `community` card. A
+  **dedup check runs up front and again on save** — a duplicate is refused with
+  a link to the existing card. With no key connected (or on a fetch/AI error)
+  the UI **falls back to a manual form** (which can still hand a PR prompt to
+  your own agent).
+- **Add a recurring source:** paste a site/feed URL. The server discovers the
+  RSS/Atom feed, previews the cards it would add, and dedups against feeds we
+  already poll; on confirm it's saved to `feed_sources` and polled on the normal
+  ingest schedule. **No manual fallback** here — it needs a real feed.
+
+The endpoints live in `src/http/server.ts` (`/api/submit/*`, open + rate-limited)
+and the server-side parsing in `src/submit/` (`fetch.ts` with the SSRF guard →
+`parse.ts` → `dedup.ts`). The Anthropic call itself is client-side (in
+`dashboard.ts`), keyed by the user's own key.
 
 ## Run it
 

@@ -8,7 +8,7 @@
  * self-healing: re-running merges any cross-post that entered before its stronger
  * identity was known.
  */
-import { SOURCES } from './sources/index.js'
+import { allSources } from './sources/index.js'
 import type { Candidate } from './types.js'
 import { upsertContent, upsertCardForContent, getActiveCards } from '../db/repo.js'
 import { contentIdentity } from './identity.js'
@@ -51,7 +51,7 @@ export async function ingestSources(opts: IngestOptions = {}): Promise<IngestRes
   const allEditions = opts.editions === 'all'
   const allowed = new Set(allEditions ? [] : opts.editions ?? DEFAULT_EDITIONS)
 
-  const sources = SOURCES.filter((s) => !opts.sourceKey || s.key === opts.sourceKey)
+  const sources = allSources().filter((s) => !opts.sourceKey || s.key === opts.sourceKey)
   if (!sources.length) {
     throw new Error(opts.sourceKey ? `No source "${opts.sourceKey}".` : 'No sources registered.')
   }
