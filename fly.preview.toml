@@ -1,0 +1,34 @@
+# Preview app (Vercel-style PR preview, on Fly).
+#
+# Runs the HTTP app only (no bot), so it never conflicts with production's
+# Telegram poller and needs no secrets. Ephemeral DB (no volume) that self-seeds
+# demo data on each cold start.
+#
+# Deploy a branch to the preview URL:
+#   fly deploy --config fly.preview.toml --app plrd-radar-curator-preview
+# Live at: https://plrd-radar-curator-preview.fly.dev/
+
+app = "plrd-radar-curator-preview"
+primary_region = "ord"
+
+[build]
+
+[env]
+  PORT = "3000"
+  DATABASE_PATH = "/tmp/preview.sqlite"
+
+# Override the image CMD: HTTP-only preview entrypoint, no bot.
+[processes]
+  app = "node dist/dev/preview.js"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = "stop"     # fine to sleep — it's just a preview
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

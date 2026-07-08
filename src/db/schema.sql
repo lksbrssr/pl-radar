@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS cards (
   type        TEXT NOT NULL DEFAULT 'Signal',  -- Talk | Podcast | Publication | Blog | Signal
   area_slug   TEXT NOT NULL,
   area_label  TEXT NOT NULL,
+  edition     TEXT,                            -- YYYY-MM: which monthly Radar this card belongs to
   image       TEXT,
   external    INTEGER NOT NULL DEFAULT 0,      -- 0/1
   active      INTEGER NOT NULL DEFAULT 1,      -- only active cards enter matchups
@@ -76,6 +77,16 @@ CREATE TABLE IF NOT EXISTS rounds (
   comparisons  INTEGER NOT NULL DEFAULT 0,     -- how many votes cast so far
   started_at   TEXT NOT NULL DEFAULT (datetime('now')),
   completed_at TEXT
+);
+
+-- Extensible curator attributes ("who are you" answers beyond role + focus).
+-- Future onboarding questions land here as key/value rows, so adding a question
+-- never requires a schema change and the lens can filter on any of them.
+CREATE TABLE IF NOT EXISTS curator_traits (
+  curator_id  INTEGER NOT NULL REFERENCES curators(id) ON DELETE CASCADE,
+  trait_key   TEXT NOT NULL,                 -- e.g. 'seniority', 'org', 'timezone'
+  trait_value TEXT NOT NULL,
+  PRIMARY KEY (curator_id, trait_key, trait_value)
 );
 
 -- Transient per-curator state (onboarding wizard step, active voting flow).

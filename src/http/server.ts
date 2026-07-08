@@ -20,8 +20,13 @@ import {
   globalLeaderboard,
   leaderboardForRole,
   attributeWinRates,
+  rankEditionByProfile,
+  countCuratorsMatching,
+  type Profile,
 } from '../ranking/segments.js'
-import { ROLES } from '../types.js'
+import { ROLES, FOCUS_AREAS, type Card } from '../types.js'
+import { renderDashboard } from './dashboard.js'
+import { currentEdition, editionLabel } from '../config.js'
 
 function formatDate(iso: string): string {
   const d = new Date(iso.replace(' ', 'T') + 'Z')
@@ -32,6 +37,41 @@ function formatDate(iso: string): string {
   })
 }
 
+/** Shape a card as plrd.org's RadarItem (+ derived rating). */
+function toRadarItem(card: Card, rating: number) {
+  return {
+    key: card.key,
+    title: card.title,
+    description: card.description ?? undefined,
+    href: card.href,
+    external: !!card.external,
+    type: card.type,
+    areaLabel: card.area_label,
+    areaSlug: card.area_slug,
+    date: card.edition ? editionLabel(card.edition) : formatDate(card.created_at),
+    image: card.image ?? undefined,
+    _rating: Math.round(rating),
+  }
+}
+
+/**
+ * Parse the Radar profile from the query: `role=capital` and/or
+ * `focus=ai-robotics,neurotech` (comma-separated). Also accepts the legacy
+ * `lens=role:x` / `lens=focus:y` form for backward compatibility.
+ */
+function parseProfile(q: Record<string, unknown>): Profile {
+  const p: Profile = {}
+  if (typeof q.role === 'string' && q.role) p.role = q.role
+  if (typeof q.focus === 'string' && q.focus)
+    p.focus = q.focus.split(',').map((s) => s.trim()).filter(Boolean)
+  // Legacy single lens fallback.
+  if (!p.role && !p.focus && typeof q.lens === 'string') {
+    if (q.lens.startsWith('role:')) p.role = q.lens.slice(5)
+    else if (q.lens.startsWith('focus:')) p.focus = [q.lens.slice(6)]
+  }
+  return p
+}
+
 export function createServer() {
   const app = express()
 
@@ -40,33 +80,84 @@ export function createServer() {
 
   app.get('/health', (_req, res) => res.json({ ok: true }))
 
-  app.get('/', (_req, res) => {
-    res.type('html').send(
-      `<!doctype html><meta charset="utf-8">
-       <title>PL R&D Radar — Curation API</title>
-       <body style="font-family:system-ui;max-width:640px;margin:40px auto;padding:0 16px">
-       <h1>PL R&D Radar — Curation backend</h1>
-       <p>Crowd-curation service. The Telegram bot collects pairwise votes;
-       these read-only endpoints publish the aggregated signal.</p>
-       <ul>
-         <li><a href="/api/leaderboard.json">/api/leaderboard.json</a></li>
-         <li><a href="/api/radar-candidates.json">/api/radar-candidates.json</a></li>
-         <li><a href="/api/segments.json">/api/segments.json</a></li>
-       </ul></body>`,
-    )
+  // The single-page app shell (sidebar: Radar / Vote / Data) is the landing
+  // page, so the PL app store shows it at `/`.
+  app.get(['/', '/dashboard'], (_req, res) => {
+    res.type('html').send(renderDashboard())
   })
 
   app.get('/api/leaderboard.json', (_req, res) => {
     res.json({ generatedAt: new Date().toISOString(), cards: globalLeaderboard() })
   })
 
-  // Top N winners, shaped exactly like plrd.org's `RadarItem`.
+  // Editions available, newest first, with labels + a `current` flag.
+  app.get('/api/editions.json', (_req, res) => {
+    const cur = currentEdition()
+    const editions = repo.listEditions().map((e) => ({
+      edition: e.edition,
+      label: editionLabel(e.edition),
+      cards: e.cards,
+      votes: e.votes ?? 0,
+      current: e.edition === cur,
+    }))
+    res.json({ current: cur, editions })
+  })
+
+  // The Radar for an edition, ranked through a composite profile (role AND
+  // focus areas AND future traits). Returns top `limit` cards as RadarItems.
+  app.get('/api/radar.json', (req, res) => {
+    const edition = (req.query.edition as string) || currentEdition()
+    const profile = parseProfile(req.query as Record<string, unknown>)
+    const limit = Math.min(Number(req.query.limit) || 5, 12)
+    const ranked = rankEditionByProfile(edition, profile)
+    const items = ranked
+      .slice(0, limit)
+      .map((row) => toRadarItem(getCard(row.id)!, row.rating))
+    res.json({
+      edition,
+      label: editionLabel(edition),
+      profile,
+      peers: countCuratorsMatching(profile),
+      poolSize: ranked.length,
+      items,
+    })
+  })
+
+  // Everything the Data view needs, in one call.
+  app.get('/api/overview.json', (_req, res) => {
+    res.json({
+      generatedAt: new Date().toISOString(),
+      curators: repo.countCurators(),
+      totalVotes: repo.totalVotes(),
+      lenses: {
+        roles: ROLES.map((r) => ({ key: r.key, label: r.label, emoji: r.emoji })),
+        areas: FOCUS_AREAS.map((a) => ({ slug: a.slug, label: a.label, emoji: a.emoji })),
+      },
+      attributeWinRates: {
+        area: attributeWinRates('area_slug'),
+        type: attributeWinRates('type'),
+        sourceKind: attributeWinRates('source_kind'),
+      },
+      byRole: ROLES.map((r) => ({
+        key: r.key,
+        label: r.label,
+        emoji: r.emoji,
+        areaRates: attributeWinRates('area_slug', r.key),
+      })),
+      curatorList: repo.listCuratorsWithStats(),
+    })
+  })
+
+  // Top N winners for an edition (default: current month), shaped exactly like
+  // plrd.org's `RadarItem` so the public Radar can ingest them directly.
   app.get('/api/radar-candidates.json', (req, res) => {
     const limit = Math.min(Number(req.query.limit) || 6, 24)
+    const edition = (req.query.edition as string) || currentEdition()
     const items = globalLeaderboard()
+      .map((row) => ({ row, card: getCard(row.id)! }))
+      .filter(({ card }) => card.edition === edition && card.active)
       .slice(0, limit)
-      .map((row) => {
-        const card = getCard(row.id)!
+      .map(({ row, card }) => {
         return {
           key: card.key,
           title: card.title,
@@ -82,7 +173,7 @@ export function createServer() {
           _rating: Math.round(row.rating),
         }
       })
-    res.json({ generatedAt: new Date().toISOString(), items })
+    res.json({ generatedAt: new Date().toISOString(), edition, items })
   })
 
   app.get('/api/segments.json', (_req, res) => {

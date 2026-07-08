@@ -4,6 +4,7 @@
  */
 import db from './index.js'
 import type { Card, Curator } from '../types.js'
+import { currentEdition } from '../config.js'
 
 // ---------------------------------------------------------------------------
 // Curators
@@ -77,6 +78,31 @@ export function getFocusAreas(curatorId: number): string[] {
   ).map((r) => r.area_slug)
 }
 
+/** Onboarded curators + vote counts + focus areas — for the dashboard. */
+export function listCuratorsWithStats() {
+  const rows = db
+    .prepare(
+      `SELECT c.id, c.username, c.first_name, c.role, c.cadence, c.status,
+              c.created_at, c.last_active_at,
+              (SELECT COUNT(*) FROM votes v WHERE v.curator_id = c.id) AS votes
+       FROM curators c
+       WHERE c.onboarded_at IS NOT NULL
+       ORDER BY votes DESC, c.created_at ASC`,
+    )
+    .all() as {
+    id: number
+    username: string | null
+    first_name: string | null
+    role: string | null
+    cadence: number | null
+    status: string
+    created_at: string
+    last_active_at: string | null
+    votes: number
+  }[]
+  return rows.map((r) => ({ ...r, focus: getFocusAreas(r.id) }))
+}
+
 export function countCurators(): number {
   return (
     db.prepare(
@@ -121,10 +147,42 @@ export function getCard(id: number): Card | undefined {
     | undefined
 }
 
+/** Cards open for voting: active AND in the current monthly edition. Old
+ *  editions "expire" out of the voting pool automatically. */
 export function getActiveCards(): Card[] {
   return db
-    .prepare('SELECT * FROM cards WHERE active = 1 ORDER BY id')
+    .prepare('SELECT * FROM cards WHERE active = 1 AND edition = ? ORDER BY id')
+    .all(currentEdition()) as Card[]
+}
+
+/** Every card (active and retired), highest-rated first — for the dashboard. */
+export function getAllCards(): Card[] {
+  return db
+    .prepare('SELECT * FROM cards ORDER BY rating DESC')
     .all() as Card[]
+}
+
+/** Recent votes joined to card titles + curator role — for the dashboard feed. */
+export function recentVotes(limit = 20) {
+  return db
+    .prepare(
+      `SELECT v.created_at,
+              c.role AS role,
+              w.title AS winner, w.area_slug AS winner_area,
+              l.title AS loser
+       FROM votes v
+       JOIN cards w ON w.id = v.winner_card_id
+       JOIN cards l ON l.id = v.loser_card_id
+       LEFT JOIN curators c ON c.id = v.curator_id
+       ORDER BY v.id DESC LIMIT ?`,
+    )
+    .all(limit) as {
+    created_at: string
+    role: string | null
+    winner: string
+    winner_area: string
+    loser: string
+  }[]
 }
 
 /**
@@ -140,11 +198,27 @@ export function pickChallenger(
     .prepare(
       `SELECT * FROM cards
        WHERE active = 1
+         AND edition = ?
          AND id != COALESCE(?, -1)
        ORDER BY matches ASC, RANDOM()
        LIMIT 1`,
     )
-    .get(excludeId) as Card | undefined
+    .get(currentEdition(), excludeId) as Card | undefined
+}
+
+/** Distinct editions present, newest first, with counts. */
+export function listEditions() {
+  return db
+    .prepare(
+      `SELECT edition,
+              COUNT(*) AS cards,
+              SUM(matches) AS votes
+       FROM cards
+       WHERE edition IS NOT NULL
+       GROUP BY edition
+       ORDER BY edition DESC`,
+    )
+    .all() as { edition: string; cards: number; votes: number }[]
 }
 
 export function upsertCard(card: {
@@ -157,16 +231,17 @@ export function upsertCard(card: {
   type?: string
   area_slug: string
   area_label: string
+  edition?: string
   image?: string | null
   external?: boolean
 }): void {
   db.prepare(
     `INSERT INTO cards
        (key, title, description, href, source, source_kind, type,
-        area_slug, area_label, image, external)
+        area_slug, area_label, edition, image, external)
      VALUES
        (@key, @title, @description, @href, @source, @source_kind, @type,
-        @area_slug, @area_label, @image, @external)
+        @area_slug, @area_label, @edition, @image, @external)
      ON CONFLICT(key) DO UPDATE SET
        title = excluded.title,
        description = excluded.description,
@@ -176,6 +251,7 @@ export function upsertCard(card: {
        type = excluded.type,
        area_slug = excluded.area_slug,
        area_label = excluded.area_label,
+       edition = excluded.edition,
        image = excluded.image,
        external = excluded.external`,
   ).run({
@@ -188,6 +264,7 @@ export function upsertCard(card: {
     type: card.type ?? 'Signal',
     area_slug: card.area_slug,
     area_label: card.area_label,
+    edition: card.edition ?? currentEdition(),
     image: card.image ?? null,
     external: card.external ? 1 : 0,
   })
@@ -241,6 +318,16 @@ export const recordVote = db.transaction(
     ).run(v.roundId)
   },
 )
+
+/** wins keyed by card id (a card's Elo comes from these pairwise wins). */
+export function cardWinCounts(): Map<number, number> {
+  const rows = db
+    .prepare(
+      'SELECT winner_card_id AS id, COUNT(*) AS wins FROM votes GROUP BY winner_card_id',
+    )
+    .all() as { id: number; wins: number }[]
+  return new Map(rows.map((r) => [r.id, r.wins]))
+}
 
 export function totalVotes(): number {
   return (db.prepare('SELECT COUNT(*) AS n FROM votes').get() as { n: number })

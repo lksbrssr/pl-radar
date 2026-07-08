@@ -32,6 +32,21 @@ export function isAdmin(userId: number): boolean {
   return config.adminIds.includes(userId)
 }
 
+/** The current monthly edition, as YYYY-MM (news items "expire" monthly). */
+export function currentEdition(): string {
+  return new Date().toISOString().slice(0, 7)
+}
+
+/** Human label for an edition, e.g. "2026-07" -> "July Radar". */
+export function editionLabel(edition: string): string {
+  const [y, m] = edition.split('-').map(Number)
+  const month = new Date(y!, (m ?? 1) - 1, 1).toLocaleString('en-US', {
+    month: 'long',
+  })
+  const thisYear = new Date().getFullYear()
+  return y === thisYear ? `${month} Radar` : `${month} ${y}`
+}
+
 /** Throw a friendly error if the bot token is missing (call before bot start). */
 export function requireBotToken(): string {
   if (!config.botToken) {

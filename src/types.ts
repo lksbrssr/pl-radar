@@ -34,6 +34,7 @@ export type Card = {
   type: string
   area_slug: string
   area_label: string
+  edition: string | null
   image: string | null
   external: number
   active: number
