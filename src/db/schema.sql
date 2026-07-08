@@ -90,6 +90,26 @@ CREATE TABLE IF NOT EXISTS curator_traits (
   PRIMARY KEY (curator_id, trait_key, trait_value)
 );
 
+-- Extensible card attributes (EAV), mirroring `curator_traits` on the card
+-- side. `attr_key='angle'` holds the primary rhetorical hook today (with
+-- `attr_key='angle_secondary'` for an optional second angle). Future card
+-- attributes (e.g. 'format', 'novelty') land here as new keys, so adding one
+-- never requires a schema change and attribute-win-rate reads can group by any
+-- of them — exactly as the segment analysis does for curator traits.
+--
+-- Why EAV over a plain `angle TEXT` column on `cards`: the brief anticipates
+-- more card attributes soon, and this pattern already exists for curators, so
+-- reusing it keeps the two "who/what has which tags" stories symmetric and
+-- avoids a column-churn migration each time we add an attribute.
+CREATE TABLE IF NOT EXISTS card_attributes (
+  card_id    INTEGER NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+  attr_key   TEXT NOT NULL,                 -- e.g. 'angle', 'angle_secondary'
+  attr_value TEXT NOT NULL,                 -- e.g. 'counterintuitive'
+  PRIMARY KEY (card_id, attr_key, attr_value)
+);
+CREATE INDEX IF NOT EXISTS idx_card_attributes_key
+  ON card_attributes(attr_key, attr_value);
+
 -- Transient per-curator state (onboarding wizard step, active voting flow).
 CREATE TABLE IF NOT EXISTS sessions (
   curator_id INTEGER PRIMARY KEY REFERENCES curators(id) ON DELETE CASCADE,
