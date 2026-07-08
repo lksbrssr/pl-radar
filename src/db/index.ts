@@ -35,6 +35,12 @@ function columnExists(table: string, column: string): boolean {
 if (!columnExists('cards', 'edition')) {
   db.exec('ALTER TABLE cards ADD COLUMN edition TEXT')
 }
+if (!columnExists('curators', 'web_token')) {
+  db.exec('ALTER TABLE curators ADD COLUMN web_token TEXT')
+  db.exec(
+    'CREATE UNIQUE INDEX IF NOT EXISTS idx_curators_web_token ON curators(web_token)',
+  )
+}
 // Backfill any card missing an edition from its creation month.
 db.exec(
   `UPDATE cards SET edition = strftime('%Y-%m', created_at) WHERE edition IS NULL`,

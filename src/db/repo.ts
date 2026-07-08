@@ -112,6 +112,46 @@ export function countCurators(): number {
 }
 
 // ---------------------------------------------------------------------------
+// Web curators (people voting in the browser rather than Telegram)
+// ---------------------------------------------------------------------------
+
+export function getCuratorByToken(token: string): Curator | undefined {
+  return db
+    .prepare('SELECT * FROM curators WHERE web_token = ?')
+    .get(token) as Curator | undefined
+}
+
+/**
+ * Register (or update) a browser voter identified by a client-generated token.
+ * Web curators get negative ids so they never collide with real Telegram user
+ * ids (which are positive). Reuses the same role + focus profile machinery, so
+ * their votes flow into the exact same Elo + segment analysis.
+ */
+export const registerWebCurator = db.transaction(
+  (input: { token: string; role?: string; focus?: string[]; name?: string }) => {
+    const existing = getCuratorByToken(input.token)
+    let id: number
+    if (existing) {
+      id = existing.id
+    } else {
+      const min = (db.prepare('SELECT MIN(id) AS m FROM curators').get() as {
+        m: number | null
+      }).m
+      id = Math.min(-1, (min ?? 0) - 1) // next id below the current minimum
+      db.prepare(
+        `INSERT INTO curators (id, first_name, web_token, onboarded_at)
+         VALUES (?, ?, ?, datetime('now'))`,
+      ).run(id, input.name ?? 'Web voter', input.token)
+    }
+    if (input.role) setCuratorRole(id, input.role)
+    if (input.focus) setFocusAreas(id, input.focus)
+    completeOnboarding(id)
+    touchCurator(id)
+    return id
+  },
+)
+
+// ---------------------------------------------------------------------------
 // Sessions (transient per-curator flow state, stored as JSON)
 // ---------------------------------------------------------------------------
 
@@ -206,6 +246,18 @@ export function pickChallenger(
     .get(currentEdition(), excludeId) as Card | undefined
 }
 
+/** Pick a fresh current-edition card excluding a set of ids (least-seen first). */
+export function pickChallengerExcluding(excludeIds: number[]): Card | undefined {
+  const ph = excludeIds.map(() => '?').join(',')
+  const notIn = excludeIds.length ? `AND id NOT IN (${ph})` : ''
+  return db
+    .prepare(
+      `SELECT * FROM cards WHERE active = 1 AND edition = ? ${notIn}
+       ORDER BY matches ASC, RANDOM() LIMIT 1`,
+    )
+    .get(currentEdition(), ...excludeIds) as Card | undefined
+}
+
 /** Distinct editions present, newest first, with counts. */
 export function listEditions() {
   return db
@@ -297,7 +349,7 @@ export const recordVote = db.transaction(
     curatorId: number
     winnerId: number
     loserId: number
-    roundId: number
+    roundId: number | null
     newWinnerRating: number
     newLoserRating: number
   }) => {
