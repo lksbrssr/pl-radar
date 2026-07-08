@@ -197,10 +197,10 @@ export function renderDashboard(): string {
   .vprogress .track{height:10px;background:var(--gray-200);border-radius:999px;overflow:hidden;}
   .vprogress .fillp{height:100%;width:0;border-radius:999px;transition:width .5s ease;
     background:linear-gradient(90deg,#3966FE,#12bfdf);}
-  .vwarn{background:#fdf0c8;color:#8a6d00;border-radius:10px;padding:10px 14px;font-size:13px;
-    margin-bottom:12px;display:none;}
-  .vwarn.show{display:block;}
-  html.dark .vwarn{background:#3a2f12;color:#f5c451;}
+  .warnsheet{max-width:420px;text-align:center;padding:32px 26px 26px;position:relative;}
+  .warnsheet .wicon{font-size:40px;margin-bottom:8px;}
+  .warnsheet h3{font-family:Newsreader,serif;font-size:24px;margin-bottom:8px;}
+  .warnsheet p{color:var(--muted);font-size:14px;line-height:1.55;margin:0 0 20px;}
   .vcard .vmedia{position:relative;aspect-ratio:16/9;}
   .vcard .vmedia img,.vcard .vmedia .ph{width:100%;height:100%;object-fit:cover;display:block;}
   .vcard .varea{position:absolute;left:10px;bottom:10px;color:#fff;font-size:10px;font-weight:600;
@@ -263,6 +263,14 @@ export function renderDashboard(): string {
     </div>
     <a class="btn" id="m-link" target="_blank" rel="noopener">Open source →</a>
   </div>
+</div></div>
+
+<div class="modal" id="warnmodal"><div class="sheet warnsheet">
+  <button class="close" id="warnclose">×</button>
+  <div class="wicon">🐢</div>
+  <h3>Whoa — slow down a sec</h3>
+  <p>You're voting very fast. Take a moment to actually read each card — rapid-fire clicks don't count toward the Radar.</p>
+  <button class="btn" id="warngot">Got it — I'll read them</button>
 </div></div>
 
 <script>
@@ -507,8 +515,9 @@ function voteCardHtml(slot, card, reigning, entering){
       '<h4>'+esc(card.title)+'</h4>'+(card.description?'<p>'+esc(card.description)+'</p>':'')+
     '</div></button>';
 }
-var warnT=null;
-function showWarn(){ var w=el('vwarn'); if(!w) return; w.classList.add('show'); clearTimeout(warnT); warnT=setTimeout(function(){ w.classList.remove('show'); }, 2600); }
+var warnOpen=false;
+function openWarn(){ warnOpen=true; el('warnmodal').classList.add('open'); }
+function closeWarn(){ warnOpen=false; el('warnmodal').classList.remove('open'); }
 function updateStats(s){
   var p=el('vprog'); if(!p||!s) return; p.style.display='block';
   var pct = s.topVotes ? Math.max(6, Math.round(s.votes/s.topVotes*100)) : 6;
@@ -531,7 +540,6 @@ function renderVoteSession(){
     '<div class="vprogress" id="vprog" style="display:none">'+
       '<div class="row"><span id="vprogLabel"></span><span class="muted">vs. the top curator</span></div>'+
       '<div class="track"><div class="fillp" id="vprogFill"></div></div></div>'+
-    '<div class="vwarn" id="vwarn">Whoa — take a moment to actually read them 🙂 Fast-clicking doesn\'t count.</div>'+
     '<p class="vversus">🅰 &nbsp; vs &nbsp; 🅱</p>'+
     '<div class="vsplit" id="vsplit"><div id="slotA"><div class="loading">Loading match-up…</div></div><div id="slotB"></div></div>'+
     '<div class="votefoot"><button id="vReset">Change interests</button>'+
@@ -544,9 +552,10 @@ function renderVoteSession(){
   });
 }
 function pick(slot){
-  if(!vs || vs.busy) return;
+  if(!vs || vs.busy || warnOpen) return;
   var now=Date.now();
-  if(vs.lastTs && now-vs.lastTs < 1200) showWarn();
+  // Too fast since your last vote? Block with a modal you must dismiss.
+  if(vs.lastTs && now-vs.lastTs < 1200){ openWarn(); return; }
   vs.busy=true;
   var winner = slot==='a'?vs.a:vs.b; var loser = slot==='a'?vs.b:vs.a;
   var loserSlot = slot==='a'?'b':'a';
@@ -563,7 +572,7 @@ function pick(slot){
     if(res && res.tooFast){ // server rejected as too fast — revert, don't count
       if(loseCard) loseCard.classList.remove('leaving');
       if(winCard) winCard.classList.remove('won');
-      showWarn(); if(res.stats) updateStats(res.stats); vs.busy=false; return;
+      openWarn(); if(res.stats) updateStats(res.stats); vs.busy=false; return;
     }
     vs.lastTs=now; vs.count++; vs.champ=slot;
     if(slot==='a'){ vs.b=nc; } else { vs.a=nc; }
@@ -592,6 +601,11 @@ function openCard(c){
 function closeModal(){ el('modal').classList.remove('open'); }
 el('m-close').onclick=closeModal;
 el('modal').addEventListener('click',function(e){ if(e.target===el('modal')) closeModal(); });
+// Slow-down warning modal (must be dismissed before voting continues).
+el('warnclose').onclick=closeWarn;
+el('warngot').onclick=closeWarn;
+el('warnmodal').addEventListener('click',function(e){ if(e.target===el('warnmodal')) closeWarn(); });
+document.addEventListener('keydown',function(e){ if(e.key==='Escape'){ closeModal(); closeWarn(); } });
 
 // ---- Boot ----
 function render(){
