@@ -7,9 +7,11 @@
  */
 import type { Source } from '../types.js'
 import { plrdInsights } from './plrd-insights.js'
+import { protocolAiBlog } from './protocol-ai-blog.js'
 
 export const SOURCES: Source[] = [
   plrdInsights,
+  protocolAiBlog,
   // Add more sources here (Doro, PL Platform, PL Capital, an external RSS/JSON
   // feed, a "submit a card" form, …). One line + one file per source.
 ]

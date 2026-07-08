@@ -10,6 +10,8 @@ export type FeedItem = {
   link: string
   description: string
   pubDate?: string
+  /** Header image, if the feed carries one (RSS <enclosure>/<media:content>). */
+  image?: string
 }
 
 function tag(block: string, name: string): string {
@@ -25,7 +27,14 @@ function tag(block: string, name: string): string {
     .trim()
 }
 
-/** Parse an RSS 2.0 feed into items. Good enough for well-formed feeds. */
+/** Pull the `url` attribute off the first matching self-closing-ish tag. */
+function attrUrl(block: string, tagName: string): string | undefined {
+  const m = block.match(new RegExp(`<${tagName}\\b[^>]*\\burl="([^"]+)"`, 'i'))
+  return m ? m[1] : undefined
+}
+
+/** Parse an RSS 2.0 feed into items. Good enough for well-formed feeds.
+ *  Also lifts a header image from <enclosure> or <media:content> when present. */
 export function parseRss(xml: string): FeedItem[] {
   const items: FeedItem[] = []
   const blocks = xml.match(/<item\b[\s\S]*?<\/item>/gi) ?? []
@@ -38,6 +47,7 @@ export function parseRss(xml: string): FeedItem[] {
       link,
       description: tag(b, 'description'),
       pubDate: tag(b, 'pubDate') || undefined,
+      image: attrUrl(b, 'enclosure') || attrUrl(b, 'media:content'),
     })
   }
   return items
