@@ -1,0 +1,38 @@
+# Fly.io deployment config (Chunk 3).
+# Deploy with:  fly launch --no-deploy   (first time, to create the app)
+#               fly volumes create data --size 1
+#               fly secrets set BOT_TOKEN=... ADMIN_IDS=... DAILY_NUDGE_HOUR=9
+#               fly deploy
+#
+# The bot uses long polling (outbound only) and also serves the read-only API
+# on the internal port, exposed here over HTTPS for plrd.org / the dashboard.
+
+app = "plrd-radar-curator"
+primary_region = "iad"
+
+[build]
+
+[env]
+  PORT = "3000"
+  DATABASE_PATH = "/data/radar.sqlite"
+
+[[mounts]]
+  source = "data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = false   # keep awake — a bot must always be polling
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    method = "get"
+    path = "/health"
+    interval = "30s"
+    timeout = "5s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
