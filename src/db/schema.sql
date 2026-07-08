@@ -149,6 +149,24 @@ CREATE TABLE IF NOT EXISTS card_attributes (
 CREATE INDEX IF NOT EXISTS idx_card_attributes_key
   ON card_attributes(attr_key, attr_value);
 
+-- User-added recurring sources (the "add a source" flow persists here instead
+-- of requiring a code PR). Each row is a feed the background ingest polls on the
+-- normal schedule, via a generic RSS reader (see src/ingest/sources/dynamic.ts).
+-- `key`/`key_prefix` mirror the code-defined Source contract so the Sources view
+-- and card-count stats treat DB feeds and code feeds identically.
+CREATE TABLE IF NOT EXISTS feed_sources (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  key         TEXT UNIQUE NOT NULL,           -- stable slug, e.g. 'feed-vitalik-blog'
+  name        TEXT NOT NULL,
+  description TEXT,
+  feed_url    TEXT NOT NULL,                  -- the RSS/Atom URL we poll
+  homepage    TEXT,
+  area_slug   TEXT,                           -- optional area override (else inferred per item)
+  added_by    INTEGER,                        -- curator id, when known
+  active      INTEGER NOT NULL DEFAULT 1,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Transient per-curator state (onboarding wizard step, active voting flow).
 CREATE TABLE IF NOT EXISTS sessions (
   curator_id INTEGER PRIMARY KEY REFERENCES curators(id) ON DELETE CASCADE,

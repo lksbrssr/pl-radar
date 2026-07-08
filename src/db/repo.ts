@@ -5,7 +5,8 @@
 import db from './index.js'
 import type { Card, Curator } from '../types.js'
 import { currentEdition, activeEdition } from '../config.js'
-import { sourceRank, canonicalUrl } from '../ingest/identity.js'
+import { sourceRank, canonicalUrl, contentIdentity } from '../ingest/identity.js'
+import { slugify } from '../ingest/util.js'
 
 // ---------------------------------------------------------------------------
 // Curators
@@ -199,6 +200,28 @@ export function getCard(id: number): Card | undefined {
     .get(id) as Card | undefined
 }
 
+export function getCardByKey(key: string): Card | undefined {
+  return db
+    .prepare(`SELECT ${CARD_COLUMNS} FROM cards c WHERE c.key = ?`)
+    .get(key) as Card | undefined
+}
+
+/**
+ * Deterministic dedup lookup for the submit flow: find an existing card whose
+ * content shares this identity key (same YouTube id / canonical URL). Returns
+ * the card so we can point the submitter at the duplicate. See
+ * src/ingest/identity.ts for how identity keys are derived.
+ */
+export function findCardByIdentity(identityKey: string): Card | undefined {
+  return db
+    .prepare(
+      `SELECT ${CARD_COLUMNS} FROM cards c
+       JOIN content ct ON ct.id = c.content_id
+       WHERE ct.identity_key = ? LIMIT 1`,
+    )
+    .get(identityKey) as Card | undefined
+}
+
 /** Cards open for voting: active AND in the current monthly edition. Old
  *  editions "expire" out of the voting pool automatically. */
 export function getActiveCards(): Card[] {
@@ -386,6 +409,126 @@ export function setCardAngles(
     }
   })
   tx()
+}
+
+/** Make `base` a unique card key by appending -2, -3, … on collision. */
+function uniqueCardKey(base: string): string {
+  const root = (base || 'community-card').slice(0, 56)
+  let key = root
+  let n = 1
+  const exists = db.prepare('SELECT 1 FROM cards WHERE key = ?')
+  while (exists.get(key)) {
+    n += 1
+    key = `${root}-${n}`
+  }
+  return key
+}
+
+/**
+ * Create a candidate card from a user submission (the "paste a URL" / manual
+ * flow). Goes through the same content layer as ingestion — so it dedups against
+ * everything else and its votes count identically — filed into the currently
+ * open edition as a `field` (community) signal. Returns the card plus whether it
+ * was newly created (false means an identical card already existed).
+ */
+export function submitCommunityCard(input: {
+  title: string
+  description?: string | null
+  href: string
+  source?: string | null
+  areaSlug: string
+  areaLabel: string
+  type: string
+  image?: string | null
+  angle?: string | null
+  addedBy?: number | null
+}): { card: Card; created: boolean } {
+  const identity = contentIdentity({ href: input.href, image: input.image })
+  const tx = db.transaction(() => {
+    const contentId = upsertContent({
+      identityKey: identity.key,
+      identityKind: identity.kind,
+      sourceKey: 'community',
+      title: input.title,
+      url: input.href,
+      description: input.description ?? null,
+      image: input.image ?? null,
+      areaSlug: input.areaSlug,
+      areaLabel: input.areaLabel,
+      type: input.type,
+      source: input.source ?? 'Community',
+      sourceKind: 'field',
+      publishedAt: new Date().toISOString(),
+      edition: activeEdition(),
+    })
+    const key = uniqueCardKey('community-' + slugify(input.title))
+    const { created, cardId } = upsertCardForContent(contentId, key)
+    if (input.angle) setCardAngles(cardId, { angle: input.angle })
+    return { cardId, created }
+  })
+  const { cardId, created } = tx()
+  return { card: getCard(cardId)!, created }
+}
+
+// ---------------------------------------------------------------------------
+// Dynamic feed sources (the "add a recurring source" flow persists here)
+// ---------------------------------------------------------------------------
+
+export type FeedSource = {
+  id: number
+  key: string
+  name: string
+  description: string | null
+  feed_url: string
+  homepage: string | null
+  area_slug: string | null
+  added_by: number | null
+  active: number
+  created_at: string
+}
+
+export function listFeedSources(activeOnly = false): FeedSource[] {
+  const where = activeOnly ? 'WHERE active = 1' : ''
+  return db
+    .prepare(`SELECT * FROM feed_sources ${where} ORDER BY created_at DESC`)
+    .all() as FeedSource[]
+}
+
+/** Dedup a recurring source by its (canonicalized) feed URL. */
+export function getFeedSourceByUrl(feedUrl: string): FeedSource | undefined {
+  const canon = canonicalUrl(feedUrl)
+  return listFeedSources().find((s) => canonicalUrl(s.feed_url) === canon)
+}
+
+export function addFeedSource(input: {
+  name: string
+  description?: string | null
+  feedUrl: string
+  homepage?: string | null
+  areaSlug?: string | null
+  addedBy?: number | null
+}): FeedSource {
+  const base = 'feed-' + (slugify(input.name) || 'source')
+  let key = base.slice(0, 56)
+  let n = 1
+  const exists = db.prepare('SELECT 1 FROM feed_sources WHERE key = ?')
+  while (exists.get(key)) {
+    n += 1
+    key = `${base}-${n}`.slice(0, 60)
+  }
+  db.prepare(
+    `INSERT INTO feed_sources (key, name, description, feed_url, homepage, area_slug, added_by)
+     VALUES (@key, @name, @description, @feed_url, @homepage, @area_slug, @added_by)`,
+  ).run({
+    key,
+    name: input.name,
+    description: input.description ?? null,
+    feed_url: input.feedUrl,
+    homepage: input.homepage ?? null,
+    area_slug: input.areaSlug ?? null,
+    added_by: input.addedBy ?? null,
+  })
+  return db.prepare('SELECT * FROM feed_sources WHERE key = ?').get(key) as FeedSource
 }
 
 // ---------------------------------------------------------------------------

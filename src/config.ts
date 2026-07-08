@@ -45,7 +45,49 @@ export const config = {
    *  and it self-heals cross-posts that entered before their identity was known.
    *  Set INGEST_INTERVAL_HOURS=0 to disable. Only runs in the full (bot) process. */
   ingestIntervalHours: Number(process.env.INGEST_INTERVAL_HOURS ?? 3),
+
+  /** Shared passphrase that gates the AI-powered submission endpoints (paste a
+   *  URL → an LLM turns it into a card; add a recurring source). Empty = the
+   *  whole submission surface is DISABLED, so the site never burns AI tokens.
+   *  Set it so only people you trust can trigger the model. The browser sends
+   *  it as the `x-submit-key` header after the user unlocks the submit panel. */
+  submitKey: process.env.SUBMIT_KEY || '',
+
+  /** LLM used to parse a pasted URL into a card/source draft. Auto-detects the
+   *  provider: Anthropic if ANTHROPIC_API_KEY is set, else an OpenAI-compatible
+   *  endpoint if OPENAI_API_KEY is set. With no key the AI parse is unavailable
+   *  and the UI falls back to the manual / bring-your-own-agent path. */
+  llm: {
+    provider: (process.env.LLM_PROVIDER || '').toLowerCase(), // 'anthropic' | 'openai' | ''
+    anthropicKey: process.env.ANTHROPIC_API_KEY || '',
+    anthropicModel: process.env.ANTHROPIC_MODEL || 'claude-3-5-haiku-latest',
+    openaiKey: process.env.OPENAI_API_KEY || '',
+    openaiModel: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+    openaiBaseUrl: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
+  },
 } as const
+
+/** True when the submission surface is turned on (a SUBMIT_KEY is configured). */
+export function submitEnabled(): boolean {
+  return !!config.submitKey
+}
+
+/** Which LLM provider is usable right now (based on which key is present), or
+ *  null when none is configured. Provider preference: explicit LLM_PROVIDER,
+ *  else Anthropic, else OpenAI. */
+export function llmProvider(): 'anthropic' | 'openai' | null {
+  const p = config.llm.provider
+  if (p === 'anthropic') return config.llm.anthropicKey ? 'anthropic' : null
+  if (p === 'openai') return config.llm.openaiKey ? 'openai' : null
+  if (config.llm.anthropicKey) return 'anthropic'
+  if (config.llm.openaiKey) return 'openai'
+  return null
+}
+
+/** True when an LLM is configured and the site can parse a URL into a draft. */
+export function aiAvailable(): boolean {
+  return llmProvider() !== null
+}
 
 export function isAdmin(userId: number): boolean {
   return config.adminIds.includes(userId)
