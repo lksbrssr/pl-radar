@@ -23,6 +23,7 @@ import {
 } from '../ranking/segments.js'
 import { ROLES } from '../types.js'
 import { renderDashboard } from './dashboard.js'
+import { currentEdition } from '../config.js'
 
 function formatDate(iso: string): string {
   const d = new Date(iso.replace(' ', 'T') + 'Z')
@@ -50,13 +51,16 @@ export function createServer() {
     res.json({ generatedAt: new Date().toISOString(), cards: globalLeaderboard() })
   })
 
-  // Top N winners, shaped exactly like plrd.org's `RadarItem`.
+  // Top N winners for an edition (default: current month), shaped exactly like
+  // plrd.org's `RadarItem` so the public Radar can ingest them directly.
   app.get('/api/radar-candidates.json', (req, res) => {
     const limit = Math.min(Number(req.query.limit) || 6, 24)
+    const edition = (req.query.edition as string) || currentEdition()
     const items = globalLeaderboard()
+      .map((row) => ({ row, card: getCard(row.id)! }))
+      .filter(({ card }) => card.edition === edition && card.active)
       .slice(0, limit)
-      .map((row) => {
-        const card = getCard(row.id)!
+      .map(({ row, card }) => {
         return {
           key: card.key,
           title: card.title,
@@ -72,7 +76,7 @@ export function createServer() {
           _rating: Math.round(row.rating),
         }
       })
-    res.json({ generatedAt: new Date().toISOString(), items })
+    res.json({ generatedAt: new Date().toISOString(), edition, items })
   })
 
   app.get('/api/segments.json', (_req, res) => {

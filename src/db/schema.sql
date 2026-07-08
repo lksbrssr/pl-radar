@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS cards (
   type        TEXT NOT NULL DEFAULT 'Signal',  -- Talk | Podcast | Publication | Blog | Signal
   area_slug   TEXT NOT NULL,
   area_label  TEXT NOT NULL,
+  edition     TEXT,                            -- YYYY-MM: which monthly Radar this card belongs to
   image       TEXT,
   external    INTEGER NOT NULL DEFAULT 0,      -- 0/1
   active      INTEGER NOT NULL DEFAULT 1,      -- only active cards enter matchups

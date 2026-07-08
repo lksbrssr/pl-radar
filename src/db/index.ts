@@ -24,4 +24,20 @@ db.pragma('foreign_keys = ON')
 const schema = readFileSync(resolve(here, 'schema.sql'), 'utf8')
 db.exec(schema)
 
+// --- Lightweight migrations for DBs created before a column existed ---------
+function columnExists(table: string, column: string): boolean {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as {
+    name: string
+  }[]
+  return cols.some((c) => c.name === column)
+}
+
+if (!columnExists('cards', 'edition')) {
+  db.exec('ALTER TABLE cards ADD COLUMN edition TEXT')
+}
+// Backfill any card missing an edition from its creation month.
+db.exec(
+  `UPDATE cards SET edition = strftime('%Y-%m', created_at) WHERE edition IS NULL`,
+)
+
 export default db
