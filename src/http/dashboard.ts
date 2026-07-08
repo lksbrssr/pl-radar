@@ -59,7 +59,7 @@ export function renderDashboard(): string {
     display:flex;flex-direction:column;gap:6px;position:sticky;top:0;height:100vh;}
   .brand{display:flex;align-items:center;gap:10px;margin-bottom:22px;}
   .brand .logo{width:26px;height:auto;flex:none;display:block;}
-  .brand .wm{font-weight:700;letter-spacing:0;font-size:16px;}
+  .brand .wm{font-weight:500;letter-spacing:0;font-size:16px;}
   .nav{display:flex;flex-direction:column;gap:3px;}
   .nav button{display:flex;align-items:center;gap:10px;width:100%;text-align:left;
     background:none;border:none;color:var(--ink);padding:10px 12px;border-radius:10px;
@@ -67,6 +67,7 @@ export function renderDashboard(): string {
   .nav button:hover{background:var(--gray-50);}
   .nav button.active{background:var(--gray-200);font-weight:600;}
   .nav .ic{width:18px;text-align:center;}
+  .navgap{height:1px;background:var(--line);margin:10px 12px 6px;}
   .hamb{display:none;margin-left:auto;background:none;border:1px solid var(--line);border-radius:10px;
     width:40px;height:40px;cursor:pointer;color:var(--ink);font-size:18px;line-height:1;
     align-items:center;justify-content:center;}
@@ -311,10 +312,12 @@ export function renderDashboard(): string {
     background:linear-gradient(180deg,rgba(255,255,255,.15),rgba(255,255,255,.35));color:var(--muted);font-size:12.5px;font-weight:600;}
   html.dark .locktile .lockover{background:linear-gradient(180deg,rgba(20,22,28,.15),rgba(20,22,28,.45));}
   .locktile .lockover .lk{font-size:20px;}
-  .addsrc{border:1.5px dashed var(--line);background:transparent;border-radius:16px;padding:18px 20px;display:flex;flex-direction:column;justify-content:center;}
+  .addsrc{display:block;width:100%;text-align:left;font-family:inherit;color:inherit;border:1.5px dashed var(--line);background:transparent;border-radius:16px;padding:20px 24px;margin:6px 0 2px;cursor:pointer;transition:border-color .12s,background .12s;}
+  .addsrc:hover{border-color:var(--muted);background:var(--gray-50);}
   .addsrc h3{font-size:18px;margin-bottom:6px;}
-  .addsrc p{font-size:13px;color:var(--muted);margin:0 0 14px;}
-  .addsrc .btn{align-self:flex-start;cursor:pointer;border:none;}
+  .addsrc p{font-size:13px;color:var(--muted);margin:0 0 14px;max-width:52ch;}
+  .addsrc .btn{display:inline-block;border:none;}
+  .srcdivider{border:none;border-top:1px solid var(--line);margin:30px 0 0;}
   /* cards view */
   .cardsec{margin-bottom:26px;}
   .cardsec .kicker{display:block;margin-bottom:12px;}
@@ -342,7 +345,7 @@ export function renderDashboard(): string {
   .mformula{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--gray-50);
     border:1px solid var(--line);border-radius:12px;padding:15px 18px;font-size:15px;overflow-x:auto;margin:14px 0;text-align:center;}
   .mformula b{color:var(--blue);font-weight:600;}
-  .mgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;}
+  .mgrid{display:grid;grid-template-columns:1fr;gap:12px;}
   .mtile{background:var(--gray-50);border:1px solid var(--line);border-radius:16px;padding:16px 18px;}
   .mtile .ico{font-size:22px;margin-bottom:8px;}
   .mtile h4{font-size:16px;margin-bottom:5px;}
@@ -467,8 +470,9 @@ export function renderDashboard(): string {
       <button data-route="radar"><span class="ic">📡</span> Radar</button>
       <button data-route="cards"><span class="ic">🃏</span> Cards</button>
       <button data-route="vote"><span class="ic">🗳️</span> Vote</button>
-      <button data-route="data"><span class="ic">📊</span> Insights</button>
       <button data-route="sources"><span class="ic">🛰️</span> Sources</button>
+      <div class="navgap"></div>
+      <button data-route="data"><span class="ic">📊</span> Insights</button>
       <button data-route="method"><span class="ic">🧭</span> Methodology</button>
     </nav>
     <div class="side-foot">
@@ -596,7 +600,7 @@ function renderRadar(){
     '<div class="controls">'+
       '<div class="field"><label>Month</label><input type="month" id="selMonth" value="'+esc(state.edition)+'" min="'+esc(oldest)+'" max="'+esc(newest)+'"></div>'+
     '</div>'+
-    '<div class="soon"><span class="soon-ic">🔒</span><div><b>Coming soon</b> — filter the Radar for what people with a given profile (role &amp; interests) surfaced.</div></div>'+
+    '<p class="lead" style="margin-top:-6px">Coming soon — filter the Radar for what people with a given profile (role &amp; interests) surfaced.</p>'+
     cutToggle()+
     '<div id="radarMount"></div>'+
     '<p class="lead" style="margin-top:14px">Showing the top '+((state.radar&&state.radar.items.length)||0)+' of '+((state.radar&&state.radar.poolSize)||0)+' candidates'+(curEd.current?' still in the running this month.':' from that edition.')+'</p>'+
@@ -686,19 +690,12 @@ function applyRadarCut(){
   }
 }
 function cutToggle(){
+  // The Balanced/By-score toggle was removed; the published cut still applies
+  // (see applyRadarCut), we just don't expose the switch. Keep the methodology
+  // link so people can still learn how the cut works.
   var r=state.radar;
-  if(lensActive() || !r || !r.balancedItems || !r.scoreItems || r.scoreItems.length<2) return '';
-  var bal = state.radarCut!=='score';
-  return '<div class="cutrow">'+
-      '<div class="cuttoggle">'+
-        '<button class="ctbtn'+(bal?' on':'')+'" data-cut="balanced">Balanced</button>'+
-        '<button class="ctbtn'+(bal?'':' on')+'" data-cut="score">By score</button>'+
-      '</div>'+
-      '<a class="methlink" href="#method">Learn more about the methodology →</a>'+
-    '</div>'+
-    '<p class="cuthint">'+(bal
-      ? 'A spread across focus areas &amp; angles — strong <em>and</em> balanced.'
-      : 'Strictly the top cards by confidence-aware score.')+'</p>';
+  if(lensActive() || !r) return '';
+  return '<div class="cutrow"><a class="methlink" href="#method">Learn more about the methodology →</a></div>';
 }
 function loadRadar(){
   var q='/api/radar.json?edition='+encodeURIComponent(state.edition)+'&limit=5';
@@ -956,11 +953,11 @@ function renderSources(){
       var home = s.homepage ? '<a href="'+esc(s.homepage)+'" target="_blank" rel="noopener">Visit →</a>' : '<span></span>';
       return '<div class="srccard"><div class="top"><h3>'+esc(s.name)+'</h3><span class="badge-int badge-pub">public</span></div>'+
         '<p>'+esc(s.description)+'</p>'+
-        '<div class="foot">'+home+'<span class="n muted">'+s.cards+' in pool</span></div></div>';
+        '<div class="foot">'+home+'<span class="n muted">'+s.cards+' in current pool</span></div></div>';
     }).join('');
-    var add = '<div class="addsrc"><h3>➕ Add a card or source</h3>'+
-      '<p>Paste a link to anything — an article, a post, a paper — and let AI draft a card you review, or wire up a recurring feed. Duplicates are caught and flagged automatically.</p>'+
-      '<button class="btn" id="opensrc">Add to the Radar →</button></div>';
+    var add = '<button class="addsrc" id="opensrc"><h3>➕ Add a card or source</h3>'+
+      '<p>Paste a link to anything — an article, a post, a paper — and let AI draft a card you review, or wire up a recurring feed.</p>'+
+      '<span class="btn">Add to the Radar →</span></button>';
     // Blurred placeholders for the not-yet-unlocked proprietary/internal feeds.
     var lockTiles = [
       ['PL Capital', 'Portfolio & investment signals from across the PL network.'],
@@ -974,8 +971,10 @@ function renderSources(){
       '<h2 class="title">Sources</h2>'+
       '<p class="lead">Where candidate cards come from. Community contributions are welcome — <a href="'+esc(d.sourcesDir)+'" target="_blank" rel="noopener">browse them on GitHub</a>.</p>'+
       '<div class="srchead"><h3>Public sources</h3><span class="tag tag-pub">public</span></div>'+
-      '<div class="soon"><span class="soon-ic">🌐</span><div>Everything here is a <b>public</b> website — any content pulled from these sources <b>may be surfaced to an external audience</b> on the Radar.</div></div>'+
-      '<div class="srcgrid">'+cards+add+'</div>'+
+      '<p class="lead" style="margin-top:-6px">Any content pulled from these sources may be surfaced to an external audience on the Radar.</p>'+
+      '<div class="srcgrid">'+cards+'</div>'+
+      add+
+      '<hr class="srcdivider">'+
       '<div class="srchead"><h3>Proprietary sources</h3><span class="tag tag-prop">internal</span></div>'+
       '<p class="lead">Internal, non-public feeds. Their content stays inside the org — <b>Internal Radar coming soon</b>.</p>'+
       '<div class="srcgrid">'+lockTiles+'</div>';
@@ -995,23 +994,25 @@ function renderCards(){
       '<input type="month" id="cMonth" value="'+esc(state.edition)+'" min="'+esc(oldest)+'" max="'+esc(newest)+'"></div>'+
       '<div class="field searchfield"><label>Search</label>'+
         '<input type="text" id="cSearch" class="searchbox" placeholder="Search cards by keyword…" value="'+esc(state.cardSearch||'')+'"></div>'+
+      '<div class="field"><label>&nbsp;</label>'+
+        '<button class="btn" id="cAdd" style="cursor:pointer;border:none;white-space:nowrap">➕ Add a card</button></div>'+
     '</div>'+
     '<div id="cardsMount"><div class="loading">Loading cards…</div></div>';
   el('cMonth').addEventListener('change', function(e){ if(e.target.value){ state.edition=e.target.value; state.cardsData=null; loadCards(); } });
   el('cSearch').addEventListener('input', function(e){ state.cardSearch=e.target.value; renderCardsGrid(); });
+  el('cAdd').addEventListener('click', function(){ openWiz('card'); });
   if(state.cardsData && state.cardsData.edition===state.edition) renderCardsGrid(); else loadCards();
 }
 function loadCards(){
   getJSON('/api/cards.json?edition='+encodeURIComponent(state.edition)).then(function(d){ state.cardsData=d; renderCardsGrid(); });
 }
 function cardTile(it){
-  var g=area(it.areaSlug);
   var media = it.image ? '<img src="'+esc(it.image)+'" loading="lazy" alt="" onerror="this.style.display=\'none\'">' : '<div class="ph"></div>';
-  var meta = '<span>★ '+it.rating+'</span><span>'+it.votes+' vote'+(it.votes===1?'':'s')+'</span>'+(it.winrate!=null?'<span>'+it.winrate+'% win</span>':'');
+  var meta = '<span>'+it.votes+' vote'+(it.votes===1?'':'s')+'</span>'+(it.winrate!=null?'<span>'+it.winrate+'% win</span>':'');
   return '<button class="tile" data-key="'+esc(it.key)+'">'+
-    '<div class="tile-media" style="background:'+g.g+'">'+media+
+    '<div class="tile-media">'+media+
       '<span class="rankbadge'+(it.inCut?' cut':'')+'">#'+it.rank+'</span>'+
-      '<span class="tile-area" style="background:'+g.c+'">'+esc(it.areaLabel)+'</span></div>'+
+      '<span class="tile-area" style="background:rgba(19,19,22,.62)">'+esc(it.areaLabel)+'</span></div>'+
     '<div class="tile-body"><span class="kicker">'+esc(it.type)+(it.source?' · '+esc(it.source):'')+'</span>'+
       '<h4>'+esc(it.title)+'</h4><div class="tile-meta">'+meta+'</div></div></button>';
 }
@@ -1112,7 +1113,7 @@ var METH = {
   cut: { title:'📡 What makes the cut',
     html:'<p>The top 5 by conservative score become the month\'s Radar. Two things shape that final set:</p>'+
       '<div class="mgrid">'+
-        '<div class="mtile"><div class="ico">⚖️</div><h4>Balanced composition</h4><p>Rather than five near-identical cards, we compose a <b>strong yet balanced</b> set — spreading across focus areas &amp; angles — but only ever reordering near the top, never promoting a weak card. Toggle <b>Balanced / By score</b> on the <a href="#radar">Radar</a>.</p></div>'+
+        '<div class="mtile"><div class="ico">⚖️</div><h4>Balanced composition</h4><p>Rather than five near-identical cards, we compose a <b>strong yet balanced</b> set — spreading across focus areas &amp; angles — but only ever reordering near the top, never promoting a weak card — this balanced cut is what the <a href="#radar">Radar</a> shows.</p></div>'+
         '<div class="mtile"><div class="ico">✅</div><h4>Is it settled?</h4><p>The #5 and #6 cards set the boundary. If their confidence intervals no longer overlap, the cut is <b>settled</b>; if they overlap, the last spot is a <b>toss-up</b> and more votes decide it.</p></div>'+
       '</div>'+
       '<div class="mgrid" style="margin-top:14px">'+
@@ -1161,8 +1162,8 @@ function submitPost(path, body){
 }
 
 var wiz = { path:null, view:null, data:{}, dedup:null, sample:[], inPool:0, result:null, err:'' };
-function openWiz(){
-  wiz = { path:null, view:null, dedup:null, sample:[], inPool:0, result:null, err:'', data:{
+function openWiz(path){
+  wiz = { path:path||null, view:null, dedup:null, sample:[], inPool:0, result:null, err:'', data:{
     title:'', href:'', description:'', area:'ai-robotics', type:'Signal', source:'', angle:'', image:null, rationale:'',
     name:'', feedUrl:'', homepage:'', srcDesc:'', srcArea:''
   } };
@@ -1524,7 +1525,7 @@ function fallbackCopy(t){ var ta=document.createElement('textarea'); ta.value=t;
 // ---- Modal ----
 function openCard(c){
   if(!c) return;
-  var media = el('m-media'); media.style.background=area(c.areaSlug).g;
+  var media = el('m-media'); media.style.background='var(--gray-200)';
   media.querySelectorAll('img,.ph').forEach(function(n){n.remove();});
   if(c.image){ var img=document.createElement('img'); img.src=c.image; media.insertBefore(img,media.firstChild); }
   el('m-kicker').textContent = c.type + (c.source?' · '+c.source:'');

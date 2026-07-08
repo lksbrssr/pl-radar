@@ -17,13 +17,24 @@ import {
 } from '@napi-rs/canvas'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
+import { existsSync } from 'node:fs'
 import type { Card } from '../types.js'
 
+// Register the bundled Inter font. The slim production image has no system
+// fonts, so if this file is missing (e.g. the build forgot to copy src/assets
+// into dist) the match-up text renders as blank boxes — fail LOUDLY so it's
+// caught, rather than shipping broken images. `npm run build` copies the font
+// into dist/assets; local dev (tsx from src) finds it directly.
 const here = dirname(fileURLToPath(import.meta.url))
-GlobalFonts.registerFromPath(
-  resolve(here, '../assets/fonts/Inter.ttf'),
-  'Inter',
-)
+const fontPath = resolve(here, '../assets/fonts/Inter.ttf')
+if (existsSync(fontPath)) {
+  GlobalFonts.registerFromPath(fontPath, 'Inter')
+} else {
+  console.error(
+    `[cardImage] MISSING FONT at ${fontPath} — match-up images will render ` +
+      `without text. Ensure the build copies src/assets into dist/assets.`,
+  )
+}
 
 // Area gradients copied verbatim from plrd.org PLRadar.tsx so the bot and the
 // public Radar look identical.
