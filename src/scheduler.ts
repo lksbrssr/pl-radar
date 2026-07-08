@@ -10,11 +10,36 @@
 import type { Bot } from 'grammy'
 import db from './db/index.js'
 import { coverageGaps } from './ranking/strength.js'
-import { activeEdition, editionLabel } from './config.js'
+import { ingestSources } from './ingest/ingest.js'
+import { activeEdition, editionLabel, config } from './config.js'
 
 let lastFiredDay = ''
 
+/**
+ * Background ingest loop. Re-fetches every source on an interval; because dedup
+ * happens on write (content layer), this keeps the pool free of cross-post
+ * duplicates as sources publish, and self-heals any that slipped in earlier.
+ * Runs an initial pass ~1 min after boot, then every `ingestIntervalHours`.
+ */
+function startIngestSchedule(): void {
+  const hours = config.ingestIntervalHours
+  if (!hours || hours <= 0) {
+    console.log('[ingest] periodic ingest disabled (INGEST_INTERVAL_HOURS=0)')
+    return
+  }
+  console.log(`[ingest] periodic re-ingest every ${hours}h (dedup on write)`)
+  const run = () =>
+    ingestSources({ log: (l) => console.log('[ingest]', l) })
+      .then((r) => console.log(`[ingest] done: +${r.ingested} new, ${r.deduped} deduped`))
+      .catch((e) => console.error('[ingest] failed:', e))
+  setTimeout(run, 60_000)
+  setInterval(run, hours * 3600_000)
+}
+
 export function startScheduler(bot: Bot): void {
+  // Background dedup/ingest runs regardless of the daily-nudge setting.
+  startIngestSchedule()
+
   const hour = process.env.DAILY_NUDGE_HOUR
   if (hour === undefined || hour === '') {
     console.log('[scheduler] DAILY_NUDGE_HOUR unset — daily nudges disabled')

@@ -39,6 +39,12 @@ export const config = {
    *  focus area / angle is discounted when composing the digest. */
   composeLambdaArea: Number(process.env.COMPOSE_LAMBDA_AREA || 60),
   composeLambdaAngle: Number(process.env.COMPOSE_LAMBDA_ANGLE || 30),
+
+  /** How often (hours) the background job re-ingests every source. Re-ingesting
+   *  is what keeps the pool deduped as sources publish (dedup happens on write),
+   *  and it self-heals cross-posts that entered before their identity was known.
+   *  Set INGEST_INTERVAL_HOURS=0 to disable. Only runs in the full (bot) process. */
+  ingestIntervalHours: Number(process.env.INGEST_INTERVAL_HOURS ?? 3),
 } as const
 
 export function isAdmin(userId: number): boolean {
