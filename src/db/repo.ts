@@ -127,6 +127,36 @@ export function getActiveCards(): Card[] {
     .all() as Card[]
 }
 
+/** Every card (active and retired), highest-rated first — for the dashboard. */
+export function getAllCards(): Card[] {
+  return db
+    .prepare('SELECT * FROM cards ORDER BY rating DESC')
+    .all() as Card[]
+}
+
+/** Recent votes joined to card titles + curator role — for the dashboard feed. */
+export function recentVotes(limit = 20) {
+  return db
+    .prepare(
+      `SELECT v.created_at,
+              c.role AS role,
+              w.title AS winner, w.area_slug AS winner_area,
+              l.title AS loser
+       FROM votes v
+       JOIN cards w ON w.id = v.winner_card_id
+       JOIN cards l ON l.id = v.loser_card_id
+       LEFT JOIN curators c ON c.id = v.curator_id
+       ORDER BY v.id DESC LIMIT ?`,
+    )
+    .all(limit) as {
+    created_at: string
+    role: string | null
+    winner: string
+    winner_area: string
+    loser: string
+  }[]
+}
+
 /**
  * Pick a fresh challenger card that isn't `excludeId` and (where possible) the
  * curator hasn't seen recently. We bias toward cards with fewer matches so the

@@ -38,7 +38,7 @@ const AREA_GRADIENT: Record<string, { from: string; via: string; to: string }> =
 // Side-by-side layout (🅰 left, 🅱 right) so the panels line up with the
 // left/right vote buttons.
 const W = 840
-const H = 720
+const H = 560
 const PAD = 18
 const GAP = 60 // middle channel that holds the VS badge
 const PANEL_W = (W - PAD * 2 - GAP) / 2

@@ -22,6 +22,7 @@ import {
   attributeWinRates,
 } from '../ranking/segments.js'
 import { ROLES } from '../types.js'
+import { renderDashboard } from './dashboard.js'
 
 function formatDate(iso: string): string {
   const d = new Date(iso.replace(' ', 'T') + 'Z')
@@ -40,20 +41,9 @@ export function createServer() {
 
   app.get('/health', (_req, res) => res.json({ ok: true }))
 
-  app.get('/', (_req, res) => {
-    res.type('html').send(
-      `<!doctype html><meta charset="utf-8">
-       <title>PL R&D Radar — Curation API</title>
-       <body style="font-family:system-ui;max-width:640px;margin:40px auto;padding:0 16px">
-       <h1>PL R&D Radar — Curation backend</h1>
-       <p>Crowd-curation service. The Telegram bot collects pairwise votes;
-       these read-only endpoints publish the aggregated signal.</p>
-       <ul>
-         <li><a href="/api/leaderboard.json">/api/leaderboard.json</a></li>
-         <li><a href="/api/radar-candidates.json">/api/radar-candidates.json</a></li>
-         <li><a href="/api/segments.json">/api/segments.json</a></li>
-       </ul></body>`,
-    )
+  // The dashboard IS the landing page (so the PL app store shows it at `/`).
+  app.get(['/', '/dashboard'], (_req, res) => {
+    res.type('html').send(renderDashboard())
   })
 
   app.get('/api/leaderboard.json', (_req, res) => {
