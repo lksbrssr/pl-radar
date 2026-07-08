@@ -13,6 +13,8 @@
  * DB) never leave this process; the public JSON is derived + safe to cache.
  */
 import express from 'express'
+import { fileURLToPath } from 'node:url'
+import { dirname, resolve } from 'node:path'
 import { config } from '../config.js'
 import * as repo from '../db/repo.js'
 import { getCard } from '../db/repo.js'
@@ -101,6 +103,15 @@ function toVoteCard(c: Card) {
 export function createServer() {
   const app = express()
   app.use(express.json())
+
+  // Focus-area icons (self-hosted, matching plrd.org/about): 3 masked PNG logos
+  // + a neurotech SVG, served at /icons/<slug>.(png|svg).
+  app.use(
+    '/icons',
+    express.static(resolve(dirname(fileURLToPath(import.meta.url)), 'icons'), {
+      maxAge: '7d',
+    }),
+  )
 
   // NOTE: no X-Frame-Options / restrictive CSP — keeps the results dashboard
   // embeddable from *.plnetwork.io (see the PL app-store rules).
