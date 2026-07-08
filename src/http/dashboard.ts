@@ -534,6 +534,7 @@ var AREA = {
   'economies-governance': { c:'#12bfdf', g:'linear-gradient(135deg,#0a3b2e,#0f6b4c 55%,#12bfdf)' },
   'ai-robotics':          { c:'#7b6cf6', g:'linear-gradient(135deg,#2a1b4d,#4834c4 55%,#7b6cf6)' },
   'neurotech':            { c:'#5b7bff', g:'linear-gradient(135deg,#141a52,#2340c9 55%,#5b7bff)' },
+  'protocol-labs':        { c:'#8b98ad', g:'linear-gradient(135deg,#12151c,#243043 55%,#5b6b86)' },
   'default':              { c:'#1982F4', g:'linear-gradient(135deg,#0d0f13,#1d2b5c 55%,#1982F4)' }
 };
 var CTA = { Talk:'Watch the talk', Podcast:'Listen now', Publication:'Read the paper', Blog:'Read the post', Signal:'Read the story' };
@@ -546,7 +547,8 @@ var FA_ICON = {
   'digital-human-rights':'/icons/digital-human-rights.png',
   'economies-governance':'/icons/economies-governance.png',
   'ai-robotics':'/icons/ai-robotics.png',
-  'neurotech':'/icons/neurotech.svg'
+  'neurotech':'/icons/neurotech.svg',
+  'protocol-labs':'/icons/pl-logo-mark.svg'
 };
 function areaIcon(slug, px){
   px = px||16; var u = FA_ICON[slug]; if(!u) return '';
@@ -1134,7 +1136,8 @@ var AREAS_W = [
   {slug:'digital-human-rights',label:'Digital Human Rights'},
   {slug:'economies-governance',label:'Economies & Governance'},
   {slug:'ai-robotics',label:'AI & Robotics'},
-  {slug:'neurotech',label:'Neurotech'}
+  {slug:'neurotech',label:'Neurotech'},
+  {slug:'protocol-labs',label:'Protocol Labs'}
 ];
 var TYPES_W = ['Talk','Podcast','Publication','Blog','Signal'];
 var repoMeta = {
@@ -1293,7 +1296,7 @@ function doParseCard(){
       wiz.data.title=d.title||''; wiz.data.description=d.description||''; wiz.data.href=d.href||url;
       wiz.data.area=d.areaSlug||'ai-robotics'; wiz.data.type=d.type||'Signal'; wiz.data.source=d.source||'';
       wiz.data.angle=d.angle||''; wiz.data.image=d.image||null; wiz.data.rationale=d.rationale||'';
-      wiz.dedup=j.duplicate||null; wiz.view='review'; renderWiz(); return;
+      wiz.stale=d.staleWarning||''; wiz.dedup=j.duplicate||null; wiz.view='review'; renderWiz(); return;
     }
     if(j.reason==='ai-unavailable'){ wiz.err=''; wiz.view='manual'; renderWiz(); return; }
     if(j.reason==='fetch'||j.reason==='parse'){ wiz.err=(j.message||'Couldn\'t read that page.')+' Add the details manually below.'; wiz.view='manual'; renderWiz(); return; }
@@ -1305,6 +1308,7 @@ function renderCardReview(){
   var d=wiz.data, g=area(d.area);
   var media = d.image ? '<div class="draftprev"><div class="dp-media" style="background:'+g.g+'"><img src="'+esc(d.image)+'" onerror="this.parentNode.parentNode.style.display=\'none\'"><span class="dp-area" style="background:'+g.c+'">'+esc(areaName(d.area))+'</span></div></div>' : '';
   setWiz('Review your card','AI filled this in \u2014 tweak anything',
+    (wiz.stale?'<div class="dedupbox">\u26a0\ufe0f <b>Might be too old.</b> '+esc(wiz.stale)+'</div>':'')+
     (wiz.dedup?dedupBanner(wiz.dedup):'')+errHtml()+
     (d.rationale?'<p class="rationale">'+esc(d.rationale)+'</p>':'')+
     media+cardFormFields(),

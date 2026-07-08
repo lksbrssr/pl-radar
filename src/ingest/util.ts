@@ -107,7 +107,8 @@ const AREA_KEYWORDS: Record<string, string[]> = {
   'digital-human-rights': ['privacy', 'rights', 'encryption', 'surveillance', 'location data', 'censorship', 'human rights', 'freedom', 'spyware', 'fourth amendment', 'geofence'],
 }
 
-/** Best-effort focus area from free text; falls back to economies-governance. */
+/** Best-effort focus area from free text. Falls back to the general
+ *  `protocol-labs` bucket when nothing matches a research area cleanly. */
 export function inferArea(text: string): string {
   const t = ` ${text.toLowerCase()} `
   let best = ''
@@ -119,7 +120,7 @@ export function inferArea(text: string): string {
       best = slug
     }
   }
-  return best || 'economies-governance'
+  return best || 'protocol-labs'
 }
 
 /** Best-effort content type from a plrd.org-style URL + title. */

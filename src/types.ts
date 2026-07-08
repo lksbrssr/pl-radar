@@ -6,6 +6,9 @@ export const FOCUS_AREAS = [
   { slug: 'economies-governance', label: 'Economies & Governance', emoji: '⚖️' },
   { slug: 'ai-robotics', label: 'AI & Robotics', emoji: '🤖' },
   { slug: 'neurotech', label: 'Neurotech', emoji: '🧠' },
+  // Catch-all for items that don't fit a research focus area cleanly — e.g. org
+  // / company announcements and general Protocol Labs news.
+  { slug: 'protocol-labs', label: 'Protocol Labs', emoji: '🔷' },
 ] as const
 
 export type AreaSlug = (typeof FOCUS_AREAS)[number]['slug']

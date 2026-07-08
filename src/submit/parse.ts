@@ -31,6 +31,33 @@ export type CardDraft = {
   image: string | null
   /** One line on why the model filed it where it did (shown in the review UI). */
   rationale?: string
+  /** Best-effort publication date (YYYY-MM-DD), or null if unknown. */
+  publishedAt?: string | null
+  /** Set when the item looks too old for a monthly "recent signals" digest. */
+  staleWarning?: string | null
+}
+
+/** Judge whether a publication date is too old for the monthly Radar. Editions
+ *  are monthly, so anything older than ~2 months is flagged for the submitter. */
+function staleness(iso: string | null | undefined): {
+  publishedAt: string | null
+  staleWarning: string | null
+} {
+  if (!iso) return { publishedAt: null, staleWarning: null }
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return { publishedAt: null, staleWarning: null }
+  const ymd = d.toISOString().slice(0, 10)
+  const days = Math.floor((Date.now() - d.getTime()) / 86_400_000)
+  if (days > 60) {
+    const months = Math.max(2, Math.round(days / 30))
+    return {
+      publishedAt: ymd,
+      staleWarning:
+        `This looks like it was published on ${ymd} (~${months} months ago). ` +
+        `The Radar highlights recent signals, so it may be too old for this month's edition.`,
+    }
+  }
+  return { publishedAt: ymd, staleWarning: null }
 }
 
 function clampArea(slug: unknown): string {
@@ -45,11 +72,12 @@ function clampAngle(a: unknown): string | null {
   return typeof a === 'string' && ANGLE_KEYS.includes(a as never) ? a : null
 }
 
-const CARD_SYSTEM = `You are an editor for the Protocol Labs R&D Radar, a monthly digest of the strongest signals across four focus areas:
+const CARD_SYSTEM = `You are an editor for the Protocol Labs R&D Radar, a monthly digest of the strongest signals across four research focus areas (plus a general bucket):
 - digital-human-rights (privacy, encryption, surveillance, human rights, freedom online)
 - economies-governance (funding, mechanisms, markets, governance, public goods, crypto-economics)
 - ai-robotics (AI models, agents, robotics, compute, benchmarks)
 - neurotech (brain, BCI, neural interfaces, neuroscience)
+- protocol-labs (org/company announcements, general Protocol Labs news, or anything that does not fit one of the four research areas cleanly)
 
 Given the metadata and text of ONE web page (article, post, paper, thread, video…), produce a concise candidate card.
 
@@ -57,13 +85,14 @@ Return ONLY a JSON object:
 {
   "title": string,            // a tight, specific headline (<= 90 chars)
   "description": string,      // 1-2 sentences on why it matters (<= 240 chars)
-  "areaSlug": one of ["digital-human-rights","economies-governance","ai-robotics","neurotech"],
+  "areaSlug": one of ["digital-human-rights","economies-governance","ai-robotics","neurotech","protocol-labs"],
   "type": one of ["Talk","Podcast","Publication","Blog","Signal"],
   "angle": one of ["counterintuitive","big-if-true","early-signal","provocative","funny","clarifying","proof"],
   "source": string,           // who to credit (publication / author / site), <= 40 chars
-  "rationale": string         // one short line on the area/angle choice
+  "rationale": string,        // one short line on the area/angle choice
+  "publishedAt": string|null  // the item's publication date as YYYY-MM-DD if stated on the page, else null
 }
-Rules: never invent facts not supported by the page. Be honest about the angle — do not manufacture hype. "Signal" is the default type for news/links.`
+Rules: never invent facts not supported by the page. Be honest about the angle — do not manufacture hype. "Signal" is the default type for news/links. For publishedAt, only use a date actually stated on the page; if none is visible, return null.`
 
 function cardUserPrompt(m: PageMeta): string {
   return [
@@ -91,8 +120,11 @@ export async function parseCardDraft(url: string): Promise<CardDraft> {
     angle?: string
     source?: string
     rationale?: string
+    publishedAt?: string
   }
   const raw = await askJson<Raw>(CARD_SYSTEM, cardUserPrompt(meta))
+  // Prefer the machine-readable meta date; fall back to the model's reading.
+  const { publishedAt, staleWarning } = staleness(meta.publishedAt || raw.publishedAt)
 
   const title = sanitizeText(raw.title || meta.title, 120) || meta.title || meta.finalUrl
   const areaSlug = clampArea(raw.areaSlug) || inferArea(`${title} ${meta.description} ${meta.text}`)
@@ -118,6 +150,8 @@ export async function parseCardDraft(url: string): Promise<CardDraft> {
     source,
     image: meta.image,
     rationale: raw.rationale ? sanitizeText(raw.rationale, 160) : undefined,
+    publishedAt,
+    staleWarning,
   }
 }
 
