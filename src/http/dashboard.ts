@@ -325,7 +325,7 @@ var FA_ICON = {
 };
 function areaIcon(slug, px){
   px = px||16; var u = FA_ICON[slug]; if(!u) return '';
-  return '<span class="faic" style="width:'+px+'px;height:'+px+'px;background:'+area(slug).c+
+  return '<span class="faic" style="width:'+px+'px;height:'+px+'px;background:var(--ink)'+
     ';-webkit-mask:url('+u+') center/contain no-repeat;mask:url('+u+') center/contain no-repeat"></span>';
 }
 
