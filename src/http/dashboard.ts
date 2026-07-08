@@ -32,11 +32,13 @@ export function renderDashboard(): string {
     --white:#ffffff; --ink:#131316; --ink-soft:#34373F;
     --gray-50:#F8F7F3; --gray-100:#F6F9FD; --gray-200:#eef1f6; --line:#e6e9f0;
     --muted:#5f6270; --blue:#1982F4; --blue-500:#3966FE; --teal:#12bfdf;
+    --pos:#0f9d58; --neg:#d64545;
   }
   html.dark{
     --white:#15171c; --ink:#E9E9EE; --ink-soft:#C9CBD3;
     --gray-50:#1c1f26; --gray-100:#1c1f26; --gray-200:#21242c; --line:#262a33;
     --muted:#9EA2AF; --blue:#3B96F6;
+    --pos:#34c07f; --neg:#f0736f;
   }
   *{box-sizing:border-box;}
   body{margin:0;background:var(--white);color:var(--ink);
@@ -180,6 +182,33 @@ export function renderDashboard(): string {
   .chip{display:inline-flex;align-items:center;font-size:11px;padding:2px 9px;border-radius:999px;background:var(--gray-200);margin:1px 2px;white-space:nowrap;}
   .chip i{width:7px;height:7px;border-radius:50%;margin-right:5px;}
   .pill{font-size:11px;padding:2px 8px;border-radius:999px;background:var(--gray-200);color:var(--muted);margin-left:6px;}
+  /* part-worth diverging bars */
+  .segnote{align-self:flex-end;font-size:12px;padding-bottom:10px;}
+  .pw{display:flex;align-items:center;gap:10px;margin:7px 0;font-size:13px;}
+  .pw.gated{opacity:.4;}
+  .pwlabel{width:130px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .pwbar{flex:1;height:14px;position:relative;background:var(--gray-200);border-radius:5px;}
+  .pwbar .zero{position:absolute;left:50%;top:-2px;bottom:-2px;width:1px;background:var(--muted);opacity:.55;}
+  .pwbar .pos,.pwbar .neg{position:absolute;top:2px;bottom:2px;border-radius:3px;}
+  .pwbar .pos{left:50%;background:var(--pos);}
+  .pwbar .neg{right:50%;background:var(--neg);}
+  .pwval{width:46px;text-align:right;font-variant-numeric:tabular-nums;font-weight:600;}
+  .pwval.up{color:var(--pos);} .pwval.down{color:var(--neg);}
+  .pwn{width:58px;text-align:right;color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums;}
+  /* deviation rows */
+  .devrow{display:flex;align-items:center;gap:10px;margin:8px 0;font-size:13.5px;}
+  .devtag{flex:none;font-size:10px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);
+    background:var(--gray-200);border-radius:6px;padding:3px 7px;width:88px;text-align:center;}
+  .devtext{flex:none;width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .devtext b{font-weight:600;}
+  /* consensus/contested rows */
+  .ccrow{display:flex;align-items:center;gap:8px;margin:9px 0;font-size:13px;}
+  .cctitle{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .ccsd{flex:none;font-variant-numeric:tabular-nums;color:var(--muted);font-size:12px;}
+  /* supply/demand table cells */
+  td.up{color:var(--pos);font-weight:600;font-variant-numeric:tabular-nums;} td.down{color:var(--neg);font-weight:600;font-variant-numeric:tabular-nums;}
+  .sdflag{font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;}
+  .sdflag.up{background:rgba(15,157,88,.14);color:var(--pos);} .sdflag.down{background:rgba(214,69,69,.14);color:var(--neg);}
   /* vote view */
   .vote-cta{background:var(--gray-50);border:1px solid var(--line);border-radius:18px;padding:34px;text-align:center;max-width:560px;}
   .vote-cta h3{font-size:24px;margin-bottom:8px;}
@@ -329,7 +358,7 @@ function areaIcon(slug, px){
     ';-webkit-mask:url('+u+') center/contain no-repeat;mask:url('+u+') center/contain no-repeat"></span>';
 }
 
-var state = { editions:[], edition:null, role:'', focus:[], overview:null, radar:null, cards:{} };
+var state = { editions:[], edition:null, role:'', focus:[], dataSeg:'', overview:null, radar:null, cards:{} };
 try{ var saved=JSON.parse(localStorage.getItem('radar-lens')||'{}'); if(saved){ state.role=saved.role||''; state.focus=saved.focus||[]; } }catch(e){}
 function saveLens(){ try{ localStorage.setItem('radar-lens', JSON.stringify({role:state.role,focus:state.focus})); }catch(e){} }
 function lensActive(){ return !!(state.role || (state.focus&&state.focus.length)); }
@@ -460,22 +489,102 @@ function loadRadar(){
   getJSON(q).then(function(r){ state.radar=r; renderRadar(); });
 }
 
-// ---- Data view ----
-function bar(p,c){ return '<div class="bar"><div class="fill" style="width:'+Math.round(p*100)+'%;background:'+c+'"></div></div>'; }
-function rateBlock(title, rows, labelFn, colorFn){
-  labelFn=labelFn||function(v){return v;}; colorFn=colorFn||function(){return '#1982F4';};
-  var body = rows.length ? rows.map(function(r){ return '<div class="raterow"><span class="ratelabel">'+esc(labelFn(r.value))+'</span>'+bar(r.winRate,colorFn(r.value))+'<span class="ratepct">'+Math.round(r.winRate*100)+'%</span></div>'; }).join('') : '<p class="muted">No votes yet.</p>';
-  return '<div class="panel"><h3>'+title+'</h3>'+body+'</div>';
+// ---- Data view (pairwise part-worths) ----
+var GROUPLABEL = { angle:'Angle', area:'Focus area', type:'Content type', source_kind:'Source' };
+function labelForRole(ov,key){ var r=ov.lenses.roles.find(function(x){return x.key===key;}); return r?r.label:key; }
+function angleName(key){ var a=(state.overview.lenses.angles||[]).find(function(x){return x.key===key;}); return a?a.label:(key||'—'); }
+function pwValueLabel(group,value){
+  if(group==='area') return areaName(value);
+  if(group==='angle') return angleName(value);
+  if(group==='source_kind') return value==='field'?'Field signal':'PL R&D internal';
+  return value; // content type
 }
-function areaLabelFromRates(ov){ var m={}; ov.lenses.areas.forEach(function(a){m[a.slug]=a.label;}); return function(v){return m[v]||v;}; }
-function renderData(){
-  var ov = state.overview, v = el('view');
-  var aLabel = areaLabelFromRates(ov);
-  var aColor = function(s){ return area(s).c; };
-  var roleGrid = ov.byRole.filter(function(r){return r.areaRates.length;}).map(function(r){
-    var rows = r.areaRates.slice(0,4).map(function(a){ return '<div class="raterow"><span class="ratelabel">'+esc(aLabel(a.value))+'</span>'+bar(a.winRate,aColor(a.value))+'<span class="ratepct">'+Math.round(a.winRate*100)+'%</span></div>'; }).join('');
-    return '<div class="panel"><h3>'+esc(r.emoji+' '+r.label)+'</h3>'+rows+'</div>';
+// Diverging bar: 0 sits in the middle, positive grows right (reward), negative left (penalty).
+function pwBar(beta,maxAbs){
+  var w = maxAbs>0 ? Math.min(Math.abs(beta)/maxAbs,1)*50 : 0;
+  var cls = beta>=0?'pos':'neg';
+  return '<div class="pwbar"><span class="zero"></span><span class="'+cls+'" style="width:'+w.toFixed(1)+'%"></span></div>';
+}
+function pwPanel(groupKey,groupLabel,levels){
+  if(!levels||!levels.length) return '';
+  var maxAbs=0; levels.forEach(function(l){ maxAbs=Math.max(maxAbs,Math.abs(l.beta)); });
+  var rows = levels.map(function(l){
+    var tip='95% CI ['+l.ciLo.toFixed(2)+', '+l.ciHi.toFixed(2)+'] · '+l.n+' comparisons';
+    return '<div class="pw'+(l.gated?' gated':'')+'" title="'+esc(tip)+'">'+
+      '<span class="pwlabel">'+esc(pwValueLabel(groupKey,l.value))+'</span>'+
+      pwBar(l.beta,maxAbs)+
+      '<span class="pwval '+(l.beta>=0?'up':'down')+'">'+(l.beta>=0?'+':'')+l.beta.toFixed(2)+'</span>'+
+      '<span class="pwn">n='+l.n+(l.gated?' ⚠':'')+'</span></div>';
   }).join('');
+  return '<div class="panel"><h3>'+esc(groupLabel)+'</h3>'+rows+'</div>';
+}
+function renderData(){
+  var ov = state.overview, v = el('view'), pw = ov.partWorths;
+  var aColor = function(s){ return area(s).c; };
+  var aLabel = function(s){ return areaName(s); };
+  var seg = state.dataSeg||'';
+  var segFit = seg ? pw.byRole.find(function(r){return r.key===seg;}) : null;
+  var byGroup = segFit ? segFit.byGroup : pw.global.byGroup;
+  var nVotes = segFit ? segFit.nVotes : pw.global.nVotes;
+
+  var segOpts = '<option value="">All curators</option>'+pw.byRole.map(function(r){
+    return '<option value="'+r.key+'"'+(r.key===seg?' selected':'')+'>'+esc(r.emoji+' '+r.label)+' · '+r.nVotes+' votes</option>'; }).join('');
+
+  var pwPanels = pw.groups.map(function(g){ return pwPanel(g.key,g.label,byGroup[g.key]||[]); }).join('');
+
+  // ---- View 2: deviation from baseline (segment only) ----
+  var devHtml='';
+  if(segFit){
+    var devs = segFit.deviations.filter(function(d){return !d.gated;}).slice(0,8);
+    devHtml = '<h2 class="title" style="font-size:22px">What sets '+esc(labelForRole(ov,seg))+' apart</h2>'+
+      '<p class="lead">Segment part-worth minus the all-curator average, biggest gaps first — the shared taste is subtracted out so only this segment\'s tilt shows.</p>'+
+      (devs.length?'<div class="panel">'+devs.map(function(d){
+        var dir = d.deviation>=0?'values':'discounts';
+        return '<div class="devrow"><span class="devtag">'+esc(GROUPLABEL[d.group]||d.group)+'</span>'+
+          '<span class="devtext"><b>'+dir+'</b> '+esc(pwValueLabel(d.group,d.value))+'</span>'+
+          pwBar(d.deviation, Math.abs(devs[0].deviation))+
+          '<span class="pwval '+(d.deviation>=0?'up':'down')+'">'+(d.deviation>=0?'+':'')+d.deviation.toFixed(2)+'</span></div>';
+      }).join('')+'</div>':'<div class="panel"><p class="muted">Not enough votes from this segment yet to separate its taste from the average.</p></div>');
+  }
+
+  // ---- View 3: consensus vs contested ----
+  var cc = ov.consensus, consensusHtml='';
+  function ccRow(c){
+    return '<div class="ccrow"><span class="chip"><i style="background:'+aColor(c.area_slug)+'"></i>'+esc(angleName(c.angle))+'</span>'+
+      '<span class="cctitle">'+esc(c.title)+'</span><span class="ccsd">σ '+c.sd.toFixed(2)+'</span></div>';
+  }
+  if(cc && cc.cards && cc.cards.length && cc.segments>=2){
+    var contested = cc.cards.slice(0,5);
+    var safe = cc.cards.slice().sort(function(a,b){return a.sd-b.sd;}).slice(0,5);
+    consensusHtml = '<h2 class="title" style="font-size:22px">Consensus vs contested</h2>'+
+      '<p class="lead">How much a card\'s appeal depends on <em>who</em> is looking (spread of its predicted pull across '+cc.segments+' segments). Low = a safe general pick; high = a lens-specific pick.</p>'+
+      '<div class="grid">'+
+        '<div class="panel"><h3>🤝 Safe general picks</h3><p class="muted" style="font-size:12px;margin:-4px 0 10px">Everyone agrees</p>'+safe.map(ccRow).join('')+'</div>'+
+        '<div class="panel"><h3>⚔️ Contested — lens-specific</h3><p class="muted" style="font-size:12px;margin:-4px 0 10px">Segments disagree most</p>'+contested.map(ccRow).join('')+'</div>'+
+      '</div>';
+  }
+
+  // ---- View 4: supply / demand gap ----
+  var sdRows = (ov.supplyDemand||[]).filter(function(x){return !x.gated;});
+  var sdHtml='';
+  if(sdRows.length){
+    var body = sdRows.slice(0,10).map(function(x){
+      var flag, cls;
+      if(x.demand>0.03 && x.supplyShare < x.expectedShare*0.9){ flag='Under-supplied — source more'; cls='up'; }
+      else if(x.demand< -0.03 && x.supplyShare > x.expectedShare*1.1){ flag='Over-supplied'; cls='down'; }
+      else { flag='Balanced'; cls=''; }
+      return '<tr><td class="muted">'+esc(GROUPLABEL[x.group]||x.group)+'</td>'+
+        '<td>'+esc(pwValueLabel(x.group,x.value))+'</td>'+
+        '<td class="'+(x.demand>=0?'up':'down')+'">'+(x.demand>=0?'+':'')+x.demand.toFixed(2)+'</td>'+
+        '<td>'+Math.round(x.supplyShare*100)+'%</td>'+
+        '<td>'+(flag==='Balanced'?'<span class="muted">'+flag+'</span>':'<span class="sdflag '+cls+'">'+flag+'</span>')+'</td></tr>';
+    }).join('');
+    sdHtml = '<h2 class="title" style="font-size:22px">Supply &amp; demand gap</h2>'+
+      '<p class="lead">What the crowd rewards (demand = global part-worth) vs how common it is in this month\'s pool (supply). A sourcing to-do list for ingestion.</p>'+
+      '<table><thead><tr><th>Attribute</th><th>Value</th><th>Demand</th><th>Supply</th><th>Signal</th></tr></thead><tbody>'+body+'</tbody></table>';
+  }
+
+  // ---- curators table (unchanged) ----
   var curatorRows = ov.curatorList.map(function(c){
     var focus = (c.focus&&c.focus.length) ? c.focus.map(function(s){ return '<span class="chip"><i style="background:'+aColor(s)+'"></i>'+esc(aLabel(s))+'</span>'; }).join('') : '<span class="muted">all</span>';
     var cad = (c.cadence&&c.cadence>0)?c.cadence+'/day':'surprise';
@@ -484,25 +593,27 @@ function renderData(){
       '<td class="muted">'+(c.role?esc(labelForRole(ov,c.role)):'—')+'</td><td>'+focus+'</td>'+
       '<td><b>'+c.votes+'</b></td><td class="muted">'+cad+'</td></tr>';
   }).join('');
+
   v.innerHTML =
     '<h2 class="title">Curation data</h2>'+
-    '<p class="lead">Every pairwise vote, aggregated. This is where the Radar\'s rankings come from.</p>'+
+    '<p class="lead">Every pairwise vote decomposed into the independent pull of each <b>angle</b>, <b>topic</b> and <b>format</b> — controlling for the others, per segment.</p>'+
     '<div class="stats">'+
       '<div class="stat"><div class="n">'+ov.curators+'</div><div class="l">Curators</div></div>'+
       '<div class="stat"><div class="n">'+ov.totalVotes+'</div><div class="l">Votes cast</div></div>'+
     '</div>'+
-    '<h2 class="title" style="font-size:22px">Who values what</h2>'+
-    '<p class="lead">Win-rate by attribute — what the crowd rewards.</p>'+
-    '<div class="grid">'+
-      rateBlock('By focus area', ov.attributeWinRates.area, aLabel, aColor)+
-      rateBlock('By content type', ov.attributeWinRates.type)+
-      rateBlock('Internal vs field', ov.attributeWinRates.sourceKind, function(x){return x==='field'?'Field signal':'PL R&D internal';})+
-    '</div>'+
-    (roleGrid?'<h2 class="title" style="font-size:22px">Focus-area preference by role</h2><div class="grid">'+roleGrid+'</div>':'')+
+    '<h2 class="title" style="font-size:22px">Part-worths by segment</h2>'+
+    '<p class="lead">Pull of each attribute value in log-odds, holding the rest constant. <b>0 = this group\'s average</b>; right rewards, left penalizes. Grayed = below '+pw.threshold+' comparisons (too little data to trust).</p>'+
+    '<div class="controls"><div class="field"><label>Segment</label><select id="selSeg">'+segOpts+'</select></div>'+
+      '<div class="segnote muted">'+(segFit?('Fit on '+nVotes+' votes from '+esc(labelForRole(ov,seg))+' curators'):('Fit on all '+nVotes+' votes'))+'</div></div>'+
+    '<div class="grid">'+pwPanels+'</div>'+
+    devHtml+
+    consensusHtml+
+    sdHtml+
     '<h2 class="title" style="font-size:22px">Curators ('+ov.curators+')</h2>'+
     (curatorRows?'<table><thead><tr><th>Curator</th><th>Role</th><th>Focus areas</th><th>Votes</th><th>Cadence</th></tr></thead><tbody>'+curatorRows+'</tbody></table>':'<div class="panel"><p class="muted">No curators yet.</p></div>');
+
+  var ss=el('selSeg'); if(ss) ss.addEventListener('change', function(e){ state.dataSeg=e.target.value; renderData(); });
 }
-function labelForRole(ov,key){ var r=ov.lenses.roles.find(function(x){return x.key===key;}); return r?r.label:key; }
 
 // ---- Vote view (in-browser king-of-the-hill) ----
 function renderVote(){

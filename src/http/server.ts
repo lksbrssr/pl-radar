@@ -22,12 +22,21 @@ import { updateRatings } from '../ranking/elo.js'
 import {
   globalLeaderboard,
   leaderboardForRole,
-  attributeWinRates,
   rankEditionByProfile,
   countCuratorsMatching,
   type Profile,
 } from '../ranking/segments.js'
-import { ROLES, FOCUS_AREAS, type Card } from '../types.js'
+import {
+  cardFeatureMap,
+  globalPartWorths,
+  partWorthsForProfile,
+  computeDeviations,
+  consensusContested,
+  supplyDemandGap,
+  PARTWORTH_MIN_N,
+  type RoleFit,
+} from '../ranking/partworths.js'
+import { ROLES, FOCUS_AREAS, ANGLES, type Card } from '../types.js'
 import { renderDashboard } from './dashboard.js'
 import { currentEdition, editionLabel } from '../config.js'
 import { SOURCES } from '../ingest/sources/index.js'
@@ -255,8 +264,17 @@ export function createServer() {
     })
   })
 
-  // Everything the Data view needs, in one call.
+  // Everything the Data view needs, in one call. Preference is decomposed with
+  // the pairwise part-worth estimator (see ranking/partworths.ts), not marginal
+  // win-rates. We compute each fit once and reuse it across the four views.
   app.get('/api/overview.json', (_req, res) => {
+    const feats = cardFeatureMap()
+    const baseline = globalPartWorths(feats)
+    const roleFits: RoleFit[] = ROLES.map((r) => ({
+      role: r.key,
+      fit: partWorthsForProfile({ role: r.key }, feats),
+    }))
+
     res.json({
       generatedAt: new Date().toISOString(),
       curators: repo.countCurators(),
@@ -264,18 +282,35 @@ export function createServer() {
       lenses: {
         roles: ROLES.map((r) => ({ key: r.key, label: r.label, emoji: r.emoji })),
         areas: FOCUS_AREAS.map((a) => ({ slug: a.slug, label: a.label, emoji: a.emoji })),
+        angles: ANGLES.map((a) => ({ key: a.key, label: a.label, emoji: a.emoji, hint: a.hint })),
       },
-      attributeWinRates: {
-        area: attributeWinRates('area_slug'),
-        type: attributeWinRates('type'),
-        sourceKind: attributeWinRates('source_kind'),
+      partWorths: {
+        threshold: PARTWORTH_MIN_N,
+        groups: [
+          { key: 'angle', label: 'Angle' },
+          { key: 'area', label: 'Focus area' },
+          { key: 'type', label: 'Content type' },
+          { key: 'source_kind', label: 'Source' },
+        ],
+        // View 1 — part-worths by segment (All + each role).
+        global: { nVotes: baseline.nVotes, byGroup: baseline.byGroup },
+        byRole: ROLES.map((r, i) => {
+          const fit = roleFits[i]!.fit
+          return {
+            key: r.key,
+            label: r.label,
+            emoji: r.emoji,
+            nVotes: fit.nVotes,
+            byGroup: fit.byGroup,
+            // View 2 — deviation from the all-curator baseline.
+            deviations: computeDeviations(fit, baseline),
+          }
+        }),
       },
-      byRole: ROLES.map((r) => ({
-        key: r.key,
-        label: r.label,
-        emoji: r.emoji,
-        areaRates: attributeWinRates('area_slug', r.key),
-      })),
+      // View 3 — consensus vs contested cards.
+      consensus: consensusContested(roleFits, feats),
+      // View 4 — supply/demand gap (a sourcing instruction for ingestion).
+      supplyDemand: supplyDemandGap(baseline, feats),
       curatorList: repo.listCuratorsWithStats(),
     })
   })
@@ -308,22 +343,29 @@ export function createServer() {
     res.json({ generatedAt: new Date().toISOString(), edition, items })
   })
 
+  // Machine-readable segment analysis: per-role Elo leaderboards + the pairwise
+  // part-worth decomposition (global baseline + per-segment fits + deviations).
+  // Supersedes the old marginal attributeWinRates block.
   app.get('/api/segments.json', (_req, res) => {
-    const byRole = ROLES.map((r) => ({
-      role: r.key,
-      label: r.label,
-      top: leaderboardForRole(r.key).slice(0, 5),
-    }))
+    const feats = cardFeatureMap()
+    const baseline = globalPartWorths(feats)
+    const byRole = ROLES.map((r) => {
+      const fit = partWorthsForProfile({ role: r.key }, feats)
+      return {
+        role: r.key,
+        label: r.label,
+        top: leaderboardForRole(r.key).slice(0, 5),
+        partWorths: { nVotes: fit.nVotes, byGroup: fit.byGroup },
+        deviations: computeDeviations(fit, baseline),
+      }
+    })
     res.json({
       generatedAt: new Date().toISOString(),
       curators: repo.countCurators(),
       totalVotes: repo.totalVotes(),
+      partWorthThreshold: PARTWORTH_MIN_N,
+      partWorths: { global: { nVotes: baseline.nVotes, byGroup: baseline.byGroup } },
       byRole,
-      attributeWinRates: {
-        area: attributeWinRates('area_slug'),
-        type: attributeWinRates('type'),
-        sourceKind: attributeWinRates('source_kind'),
-      },
     })
   })
 

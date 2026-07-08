@@ -130,28 +130,38 @@ function toEdition(board: ReturnType<typeof rankCards>, edition: string) {
 }
 
 /**
+ * Every pairwise vote cast by curators matching a profile, chronological. No
+ * filters => all votes (the General baseline). This is the single place the
+ * "whose votes count" logic lives, shared by the Elo lens and the part-worth
+ * estimator (ranking/partworths.ts).
+ */
+export function votesForProfile(p: Profile): VoteRow[] {
+  if (!hasFilters(p)) {
+    return db
+      .prepare('SELECT winner_card_id, loser_card_id FROM votes ORDER BY id')
+      .all() as VoteRow[]
+  }
+  const w = curatorWhere(p)
+  return db
+    .prepare(
+      `SELECT v.winner_card_id, v.loser_card_id FROM votes v
+       WHERE v.curator_id IN (SELECT c.id FROM curators c WHERE ${w.sql})
+       ORDER BY v.id`,
+    )
+    .all(...w.params) as VoteRow[]
+}
+
+/**
  * Rank one edition's cards through a profile. No filters => General Radar (every
  * vote). Otherwise only votes from curators matching the profile are counted,
  * surfacing what "people like you" ranked highest. Cards never face cards from
  * other editions, so filtering the ranking to an edition is safe.
  */
 export function rankEditionByProfile(edition: string, p: Profile) {
-  let votes: VoteRow[]
-  if (!hasFilters(p)) {
-    votes = db
-      .prepare('SELECT winner_card_id, loser_card_id FROM votes ORDER BY id')
-      .all() as VoteRow[]
-  } else {
-    const w = curatorWhere(p)
-    votes = db
-      .prepare(
-        `SELECT v.winner_card_id, v.loser_card_id FROM votes v
-         WHERE v.curator_id IN (SELECT c.id FROM curators c WHERE ${w.sql})
-         ORDER BY v.id`,
-      )
-      .all(...w.params) as VoteRow[]
-  }
-  return toEdition(rankCards(recomputeElo(votes, allCardIds())), edition)
+  return toEdition(
+    rankCards(recomputeElo(votesForProfile(p), allCardIds())),
+    edition,
+  )
 }
 
 function rankCards(ratings: Map<number, number>) {
@@ -177,6 +187,15 @@ function rankCards(ratings: Map<number, number>) {
 }
 
 /**
+ * @deprecated Superseded by the pairwise part-worth estimator in
+ * `ranking/partworths.ts`. Marginal win-rates count wins/losses per attribute
+ * value *ignoring the opponent*, so correlated attributes (topic/angle/format)
+ * are confounded and the rates are near-symmetric by construction. The
+ * conditional-logit estimator uses each vote as a choice between two known
+ * attribute bundles and recovers the independent "pull" of each attribute.
+ * Kept only so any external consumer still calling it keeps working; the
+ * dashboard + JSON API no longer surface it.
+ *
  * Attribute win-rates. For each value of an attribute, how often did cards with
  * that value win the comparisons they took part in? Optionally scoped to a role.
  *
