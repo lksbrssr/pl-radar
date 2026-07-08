@@ -46,32 +46,26 @@ keeping both provenances. So re-running ingest reconciles old duplicates too.
 so the pool stays deduped as sources publish without anyone running the CLI.
 Because dedup happens on write, any newly-added card is deduped as it lands.
 
-## Add a card or source from the web app (bring-your-own-Claude)
+## Add a card or source from the web app (AI-assisted)
 
-The **Sources → Add a card or source** panel is the zero-code path. Submission
-is open like in-browser voting; the AI drafting is **bring-your-own-key** — each
-user connects their OWN Anthropic key in the browser and the model call goes
-**straight from their browser to Anthropic**, so the server never holds a key or
-spends tokens. (Set `SUBMIT_DISABLED=1` to turn the whole surface off.)
+The **Sources → Add a card or source** panel is the zero-code path. It's gated
+by `SUBMIT_KEY` (so the site only burns AI tokens for people you trust — see the
+root `.env.example`) and, when an LLM key is set, uses it to do the parsing:
 
 - **Add a card:** paste *any* URL (article, Reddit/X post, paper, video). The
-  server fetches the page (SSRF-guarded) and returns its metadata + a heuristic
-  draft; if the user has connected Claude, their browser refines it into a
-  polished card (title, description, area, type, angle, attribution). You
-  review/edit before it lands in the open edition as a `community` card. A
-  **dedup check runs up front and again on save** — a duplicate is refused with
-  a link to the existing card. With no key connected (or on a fetch/AI error)
-  the UI **falls back to a manual form** (which can still hand a PR prompt to
-  your own agent).
+  server fetches the page, an LLM drafts the card (title, description, area,
+  type, angle, attribution), and you review/edit before it lands in the open
+  edition as a `community` card. A **dedup check runs up front and again on
+  save** — a duplicate is refused with a link to the existing card. If the AI
+  isn't configured or the fetch fails, the UI **falls back to a manual form**
+  (and can still hand a PR prompt to your own agent).
 - **Add a recurring source:** paste a site/feed URL. The server discovers the
   RSS/Atom feed, previews the cards it would add, and dedups against feeds we
   already poll; on confirm it's saved to `feed_sources` and polled on the normal
   ingest schedule. **No manual fallback** here — it needs a real feed.
 
-The endpoints live in `src/http/server.ts` (`/api/submit/*`, open + rate-limited)
-and the server-side parsing in `src/submit/` (`fetch.ts` with the SSRF guard →
-`parse.ts` → `dedup.ts`). The Anthropic call itself is client-side (in
-`dashboard.ts`), keyed by the user's own key.
+The endpoints live in `src/http/server.ts` (`/api/submit/*`) and the parsing in
+`src/submit/` (`fetch.ts` → `llm.ts` → `parse.ts`, with `dedup.ts`).
 
 ## Run it
 
