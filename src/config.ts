@@ -44,6 +44,12 @@ export const config = {
   composeLambdaArea: Number(process.env.COMPOSE_LAMBDA_AREA || 60),
   composeLambdaAngle: Number(process.env.COMPOSE_LAMBDA_ANGLE || 30),
 
+  /** Drop candidates from EXTERNAL ("field") sources that match none of the
+   *  four research areas and carry no Protocol Labs signal — i.e. off-mission
+   *  items that would otherwise land in the generic catch-all bucket. Internal
+   *  PL sources are never dropped. Set DROP_OFF_MISSION=0 to keep everything. */
+  dropOffMission: (process.env.DROP_OFF_MISSION ?? '1') !== '0',
+
   /** How often (hours) the background job re-ingests every source. Re-ingesting
    *  is what keeps the pool deduped as sources publish (dedup happens on write),
    *  and it self-heals cross-posts that entered before their identity was known.

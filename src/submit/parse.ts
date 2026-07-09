@@ -260,9 +260,12 @@ export async function parseSourceDraft(url: string): Promise<SourceDraft> {
     if (raw.name) name = sanitizeText(raw.name, 40)
     if (raw.description) description = sanitizeText(raw.description, 120)
   } catch (err) {
-    // LLM is optional here for naming; a missing model still yields a scaffold
-    // from the feed's own title. Re-throw only truly fatal (non-LLM) errors.
-    if ((err as Error)?.name !== 'LlmUnavailableError') throw err
+    // Naming is a pure nicety: we ALWAYS have a usable fallback (the feed's own
+    // <title>). A model that is missing, rate-limited, overloaded, timing out,
+    // or returning junk must never block adding an otherwise-valid feed —
+    // that made legitimate sources look "un-addable" on a transient LLM blip.
+    // So we swallow every error here and keep the feed-title scaffold.
+    console.warn('[submit] source naming skipped (LLM unavailable/failed):', (err as Error)?.message || err)
   }
 
   const sample = items.slice(0, 4).map((i) => {

@@ -46,6 +46,28 @@ keeping both provenances. So re-running ingest reconciles old duplicates too.
 so the pool stays deduped as sources publish without anyone running the CLI.
 Because dedup happens on write, any newly-added card is deduped as it lands.
 
+## On-mission filtering (off-topic drop)
+
+External ("field") sources often publish plenty that has nothing to do with PL
+R&D's focus areas — an agency's general org updates, hiring news, birthday
+posts. Rather than dumping those into the generic **Protocol Labs** catch-all,
+ingestion **drops** a candidate when ALL of these hold:
+
+- the source is `external: true`,
+- the item only landed in the `protocol-labs` fallback bucket (no research-area
+  match), **and**
+- its title+description match **no** focus-area keyword and **no** Protocol Labs
+  signal (filecoin/ipfs/libp2p/…), per `inferAreaOrNull()` in `util.ts`.
+
+Explicitly-tagged items (a real research area, or a feed `area_slug` override)
+and every **internal** PL source are never dropped. Keyword matching is
+boundary-aware with stem support (`neuro*` catches neuron/neuroscience; `ai`
+matches `AI-driven` but not `said`), and it deliberately errs toward *keeping*
+borderline cards. Dropped items are reported as **off-mission** in the ingest
+output and the add-a-source result. Set `DROP_OFF_MISSION=0` to keep everything
+(the old catch-all behaviour). Re-ingest is idempotent, so improving the keyword
+banks later recovers anything that was previously dropped.
+
 ## Add a card or source from the web app (AI-assisted)
 
 The **Sources → Add a card or source** panel is the zero-code path. It's gated

@@ -100,27 +100,60 @@ export function areaLabel(slug: string): string {
 // Keyword banks for best-effort area inference. This is intentionally simple;
 // once cards carry explicit tags (worked on separately) that becomes the
 // source of truth and this is just a fallback.
+//  A trailing '*' makes a keyword a PREFIX/stem match (e.g. 'neuro*' catches
+//  neuron / neurons / neuroscience); otherwise it's a whole-word match.
 const AREA_KEYWORDS: Record<string, string[]> = {
-  neurotech: ['brain', 'neuro', 'bci', 'connectome', 'neural', 'cortex', 'paralysis', 'synap', 'stentrode', 'implant'],
-  'economies-governance': ['funding', 'governance', 'quadratic', 'public good', 'economic', 'market', 'token', 'filecoin', 'storage', 'retro', 'capital', 'mechanism', 'auction', 'stablecoin'],
-  'ai-robotics': ['robot', 'agent', 'model', 'machine learning', ' ml ', 'compute', 'gpu', 'manipulation', 'benchmark', 'world model', 'autonomous', ' ai '],
-  'digital-human-rights': ['privacy', 'rights', 'encryption', 'surveillance', 'location data', 'censorship', 'human rights', 'freedom', 'spyware', 'fourth amendment', 'geofence'],
+  neurotech: ['brain*', 'neuro*', 'neural', 'bci', 'connectome', 'cortex', 'cortical', 'paralysis', 'synap*', 'stentrode', 'implant*'],
+  'economies-governance': ['funding', 'govern*', 'quadratic', 'public good*', 'economic*', 'economy', 'market*', 'token*', 'filecoin', 'storage', 'retroactive', 'capital', 'mechanism design', 'auction*', 'stablecoin', 'philanthrop*', 'incentive*'],
+  'ai-robotics': ['robot*', 'agent*', 'ai', 'artificial intelligence', 'llm*', 'model*', 'machine learning', 'ml', 'compute', 'gpu*', 'manipulation', 'benchmark*', 'autonom*'],
+  'digital-human-rights': ['privacy', 'rights', 'encrypt*', 'surveillance', 'location data', 'censorship', 'human rights', 'freedom', 'spyware', 'fourth amendment', 'geofenc*'],
 }
 
-/** Best-effort focus area from free text. Falls back to the general
- *  `protocol-labs` bucket when nothing matches a research area cleanly. */
-export function inferArea(text: string): string {
+/** Boundary-aware keyword test. Hyphens, spaces and punctuation all count as
+ *  word edges, so "ai" matches "AI-driven" / "AI." but not "said" or "brain".
+ *  A trailing '*' switches to a prefix/stem match ("neuro*" → neuron, neurons,
+ *  neuroscience) so we catch inflections without matching unrelated words like
+ *  "brainstorm". Multi-word phrases are matched literally with the same edges. */
+function hasKeyword(haystack: string, word: string): boolean {
+  const prefix = word.endsWith('*')
+  const bare = (prefix ? word.slice(0, -1) : word).toLowerCase()
+  const esc = bare.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const tail = prefix ? '' : '(?![a-z0-9])'
+  return new RegExp(`(?:^|[^a-z0-9])${esc}${tail}`, 'i').test(haystack)
+}
+
+/** Keywords that mark genuine Protocol Labs org/ecosystem news (as opposed to
+ *  "couldn't classify it"). These keep real PL announcements in the catch-all
+ *  `protocol-labs` bucket instead of being dropped as off-mission. */
+const PROTOCOL_LABS_KEYWORDS = [
+  'protocol labs', 'filecoin', 'ipfs', 'libp2p', 'drand', 'ipld', 'fil+',
+  'fvm', 'pln', 'pl network', 'juan benet', 'web3.storage', 'nft.storage',
+]
+
+/** Best-effort focus area from free text, or `null` when nothing matches any
+ *  research area or the Protocol Labs bucket — i.e. the text looks off-mission.
+ *  Callers that need a concrete slug should use `inferArea` (which falls back to
+ *  `protocol-labs`); ingestion uses this to DROP off-mission external items. */
+export function inferAreaOrNull(text: string): string | null {
   const t = ` ${text.toLowerCase()} `
   let best = ''
   let bestScore = 0
   for (const [slug, words] of Object.entries(AREA_KEYWORDS)) {
-    const score = words.reduce((n, w) => n + (t.includes(w) ? 1 : 0), 0)
+    const score = words.reduce((n, w) => n + (hasKeyword(t, w) ? 1 : 0), 0)
     if (score > bestScore) {
       bestScore = score
       best = slug
     }
   }
-  return best || 'protocol-labs'
+  if (best) return best
+  if (PROTOCOL_LABS_KEYWORDS.some((w) => hasKeyword(t, w))) return 'protocol-labs'
+  return null
+}
+
+/** Best-effort focus area from free text. Falls back to the general
+ *  `protocol-labs` bucket when nothing matches a research area cleanly. */
+export function inferArea(text: string): string {
+  return inferAreaOrNull(text) ?? 'protocol-labs'
 }
 
 /** Best-effort content type from a plrd.org-style URL + title. */

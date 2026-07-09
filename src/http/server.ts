@@ -564,6 +564,7 @@ export function createServer() {
       deduped: number
       skippedEdition: number
       undated: number
+      offTopic: number
       perEdition: Record<string, number>
     } | null = null
     let ingestError: string | null = null
@@ -574,6 +575,7 @@ export function createServer() {
         deduped: r.deduped,
         skippedEdition: r.skippedEdition,
         undated: r.undated,
+        offTopic: r.offTopic,
         perEdition: r.perEdition,
       }
     } catch (err) {
