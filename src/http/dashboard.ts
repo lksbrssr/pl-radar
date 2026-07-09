@@ -83,7 +83,10 @@ export function renderDashboard(): string {
   .setsheet{max-width:440px;padding:28px 26px 22px;position:relative;}
   .setsheet h3{font-family:Newsreader,serif;font-size:24px;margin:0 0 14px;}
   .setacct{margin-top:18px;padding-top:14px;border-top:1px solid var(--line);font-size:13px;}
-  .setacct-h{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-bottom:6px;}
+  .setacct-h{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-bottom:8px;}
+  .setsec{margin-top:18px;padding-top:16px;border-top:1px solid var(--line);}
+  .setsec:first-child{margin-top:0;padding-top:0;border-top:none;}
+  #s-theme svg{margin-right:2px;}
   .setrow{display:flex;justify-content:flex-end;margin-top:18px;}
   .pillbtn{display:inline-block;background:var(--ink);color:var(--white);border:none;border-radius:999px;
     padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;}
@@ -541,6 +544,7 @@ export function renderDashboard(): string {
   html.dark .adminband .abadge{color:#f5c451;}
   .adminnote{border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin:10px 0;padding:9px 0;}
   .adminnote-t{font-size:12px;font-weight:600;color:var(--muted);letter-spacing:.02em;}
+  .adminsep{border:none;border-top:1px solid var(--line);margin:34px 0 4px;}
   .authlink{cursor:pointer;text-decoration:underline;color:var(--blue);}
   .authlink:hover{opacity:.85;}
   .admrow{opacity:.62;}
@@ -549,7 +553,6 @@ export function renderDashboard(): string {
   .tilewrap .cardadmin{border-top:1px solid var(--line);padding-top:10px;}
 </style></head>
 <body>
-<button class="themebtn" id="themeToggle" aria-label="Toggle light / dark"></button>
 <div class="app">
   <aside class="sidebar">
     <div class="brand">
@@ -569,7 +572,6 @@ export function renderDashboard(): string {
     <div class="side-foot">
       <hr class="footdiv">
       <div class="authbox" id="authStatus"></div>
-      <div class="tg">Vote in Telegram:<br><a href="https://t.me/${bot}" target="_blank">@${bot}</a></div>
     </div>
   </aside>
   <main class="main"><div class="wrap" id="view"><div class="loading">Loading…</div></div></main>
@@ -613,7 +615,6 @@ export function renderDashboard(): string {
 
 <div class="modal" id="authmodal"><div class="sheet authsheet">
   <button class="close" id="authclose">×</button>
-  <div class="authic">🛰️</div>
   <h3>Vote as yourself</h3>
   <p class="authlede">Connect through Telegram — under a minute, no password required — to vote as yourself instead of anonymously.</p>
   <ul class="authbenefits">
@@ -671,7 +672,7 @@ function areaIcon(slug, px){
     ';-webkit-mask:url('+u+') center/contain no-repeat;mask:url('+u+') center/contain no-repeat"></span>';
 }
 
-var state = { editions:[], edition:null, role:'', focus:[], dataSeg:'', overview:null, radar:null, radarCut:null, cards:{}, cardSearch:'', showHidden:false, hiddenData:null, curSeg:'', dataScope:'all', dataOverview:null };
+var state = { editions:[], edition:null, role:'', focus:[], dataSeg:'', overview:null, radar:null, radarCut:null, cards:{}, cardSearch:'', showHidden:false, hiddenData:null, curSeg:'', dataScope:'all', dataOverview:null, poolScope:'' };
 try{ var saved=JSON.parse(localStorage.getItem('radar-lens')||'{}'); if(saved){ state.role=saved.role||''; state.focus=saved.focus||[]; } }catch(e){}
 function saveLens(){ try{ localStorage.setItem('radar-lens', JSON.stringify({role:state.role,focus:state.focus})); }catch(e){} }
 function lensActive(){ return !!(state.role || (state.focus&&state.focus.length)); }
@@ -876,17 +877,23 @@ function pwPanel(groupKey,groupLabel,levels){
   }).join('');
   return '<div class="panel"><h3>'+esc(groupLabel)+'</h3>'+rows+'</div>';
 }
-function setDataScope(scope){
-  state.dataScope=scope;
-  if(scope==='all'){ state.dataOverview=null; renderData(); return; }
+// Reward period (part-worths) and supply pool are independent scopes.
+function loadDataOverview(){
+  var reward=state.dataScope||'all', pool=state.poolScope||'';
+  var bootPool=(state.overview&&state.overview.pool)||'';
+  if(reward==='all' && (!pool || pool===bootPool)){ state.dataOverview=null; renderData(); return; }
   el('view').innerHTML='<h2 class="title">Curation data</h2><div class="loading">Loading…</div>';
-  getJSON('/api/overview.json?edition='+encodeURIComponent(scope)).then(function(d){ state.dataOverview=d; renderData(); });
+  getJSON('/api/overview.json?edition='+encodeURIComponent(reward)+(pool?('&pool='+encodeURIComponent(pool)):'')).then(function(d){ state.dataOverview=d; renderData(); });
 }
+function lblForEdition(ed){ return (state.editions.find(function(e){return e.edition===ed;})||{}).label || ed; }
 function renderData(){
   var ov = state.dataOverview || state.overview, v = el('view'), pw = ov.partWorths;
   var scope = state.dataScope || 'all';
-  var scopeLbl = scope==='all' ? 'all-time' : ((state.editions.find(function(e){return e.edition===scope;})||{}).label || scope);
+  var scopeLbl = scope==='all' ? 'all-time' : lblForEdition(scope);
+  var poolEd = ov.pool || state.poolScope || (state.editions[0]&&state.editions[0].edition) || '';
+  var poolLbl = lblForEdition(poolEd);
   var scopeOpts = '<option value="all"'+(scope==='all'?' selected':'')+'>All time</option>'+state.editions.map(function(e){ return '<option value="'+e.edition+'"'+(e.edition===scope?' selected':'')+'>'+esc(e.label)+'</option>'; }).join('');
+  var poolOpts = state.editions.map(function(e){ return '<option value="'+e.edition+'"'+(e.edition===poolEd?' selected':'')+'>'+esc(e.label)+'</option>'; }).join('');
   var aColor = function(s){ return area(s).c; };
   var aLabel = function(s){ return areaName(s); };
   var seg = state.dataSeg||'';
@@ -946,16 +953,18 @@ function renderData(){
         '<td>'+Math.round(x.supplyShare*100)+'%</td>'+
         '<td>'+(flag==='Balanced'?'<span class="muted">'+flag+'</span>':'<span class="sdflag '+cls+'">'+flag+'</span>')+'</td></tr>';
     }).join('');
-    sdHtml = '<h2 class="title" style="font-size:22px">Supply &amp; demand gap</h2>'+
-      '<p class="lead">What the crowd rewards (demand = part-worth) vs how common it is in the <b>'+esc(scopeLbl)+'</b> card pool (supply). A sourcing to-do list for ingestion.</p>'+
+    sdHtml = '<h2 class="title" style="font-size:22px;margin-top:36px">Supply &amp; demand gap</h2>'+
+      '<p class="lead">What the crowd rewards over <b>'+esc(scopeLbl)+'</b> (demand = part-worth) vs how common it is in the <b>'+esc(poolLbl)+'</b> card pool (supply) — pick each independently. A sourcing to-do list for ingestion.</p>'+
+      '<div class="controls"><div class="field"><label>Reward period</label><select id="selScope2">'+scopeOpts+'</select></div>'+
+        '<div class="field"><label>Card pool</label><select id="selPool">'+poolOpts+'</select></div></div>'+
       '<table><thead><tr><th>Attribute</th><th>Value</th><th>Demand</th><th>Supply</th><th>Signal</th></tr></thead><tbody>'+body+'</tbody></table>';
   }
 
   v.innerHTML =
     '<h2 class="title">Curation data</h2>'+
     '<p class="lead">Every pairwise vote decomposed into the independent pull of each <b>angle</b>, <b>topic</b> and <b>format</b> — controlling for the others, per segment.</p>'+
-    '<div class="controls" style="margin-bottom:4px"><div class="field"><label>Time span</label><select id="selScope">'+scopeOpts+'</select></div>'+
-      '<div class="segnote muted">Everything on this page is computed over <b>'+esc(scopeLbl)+'</b> votes and the '+esc(scopeLbl)+' card pool.</div></div>'+
+    '<div class="controls" style="margin-bottom:4px"><div class="field"><label>Crowd-reward period</label><select id="selScope">'+scopeOpts+'</select></div>'+
+      '<div class="segnote muted">Part-worths, deviations and consensus below are fit over <b>'+esc(scopeLbl)+'</b> votes. (Supply &amp; demand has its own pool selector.)</div></div>'+
     '<div class="stats">'+
       '<div class="stat"><div class="n">'+ov.curators+'</div><div class="l">Curators</div></div>'+
       '<div class="stat"><div class="n">'+((ov.partWorths&&ov.partWorths.global&&ov.partWorths.global.nVotes)||ov.totalVotes)+'</div><div class="l">'+(scope==='all'?'Votes cast':'Votes this span')+'</div></div>'+
@@ -970,13 +979,14 @@ function renderData(){
     consensusHtml+
     sdHtml+
     (can('manage_admins')
-      ? '<h2 class="title" style="font-size:22px">Curators 🔐 <span class="tag tag-pub" style="vertical-align:middle">admin</span></h2>'+
+      ? '<hr class="adminsep"><h2 class="title" style="font-size:22px">Curators 🔐 <span class="tag tag-pub" style="vertical-align:middle">admin</span></h2>'+
         '<p class="lead">Admin-only. Each curator’s self-selected profile (read-only), plus promote/revoke. Pick one for an individual preference lens.</p>'+
         '<div id="adminCurators"><div class="loading">Loading curators…</div></div>'
       : '');
 
   var ss=el('selSeg'); if(ss) ss.addEventListener('change', function(e){ state.dataSeg=e.target.value; renderData(); });
-  var scp=el('selScope'); if(scp) scp.addEventListener('change', function(e){ setDataScope(e.target.value); });
+  ['selScope','selScope2'].forEach(function(idv){ var s=el(idv); if(s) s.addEventListener('change', function(e){ state.dataScope=e.target.value; loadDataOverview(); }); });
+  var sp=el('selPool'); if(sp) sp.addEventListener('change', function(e){ state.poolScope=e.target.value; loadDataOverview(); });
   if(can('manage_admins')) loadAdminCurators();
 }
 
@@ -1117,10 +1127,10 @@ function renderVoteSession(){
   var who = (linked && web.name)
     ? '<p class="lead" style="margin-top:-8px">Voting as <b>'+esc(web.name)+'</b> — your picks count under your curator profile.</p>'
     : '';
-  var foot = linked
-    ? ''
-    : '<div class="votefoot"><button id="vEditProfile">Edit curator profile</button>'+
-      '<a href="'+TG+'" target="_blank">Vote in Telegram instead</a></div>';
+  // Always offer the Telegram link so a web voter (even one who came from
+  // Telegram) can switch back and forth.
+  var foot = '<div class="votefoot"><button id="vEditProfile">Edit curator profile</button>'+
+    '<a href="'+TG+'" target="_blank">Vote in Telegram instead</a></div>';
   el('view').innerHTML =
     '<h2 class="title">Vote</h2>'+
     '<p class="lead">Tap the stronger signal for the Radar. Your pick stays and faces a new challenger.</p>'+
@@ -1194,7 +1204,7 @@ function renderSources(){
     el('view').innerHTML =
       (can('manage_sources')?'<div class="adminband"><span class="abadge">ADMIN</span><span>Hide any source, or delete user-added ones. Manage them just below.</span></div>':'')+
       '<h2 class="title">Sources</h2>'+
-      '<p class="lead">Where candidate cards come from. Community contributions are welcome — <a href="'+esc(d.sourcesDir)+'" target="_blank" rel="noopener">browse them on GitHub</a>.</p>'+
+      '<p class="lead">Where candidate cards come from.</p>'+
       (can('manage_sources')?'<div id="srcAdminMount"></div>':'')+
       '<div class="srchead"><h3>Public sources</h3><span class="tag tag-pub">public</span></div>'+
       '<p class="lead" style="margin-top:-6px">Any content pulled from these sources may be surfaced to an external audience on the Radar.</p>'+
@@ -1952,20 +1962,13 @@ function can(right){ return !!(admin.me && (admin.me.root || (admin.me.rights||[
 // anonymous — with a one-tap way to connect for anonymous users.
 function renderAuthStatus(){
   var b=el('authStatus'); if(!b) return;
-  var status, action;
-  if(admin.me){
-    status='Signed in as admin'; action='<button id="authAct" class="pillbtn ghost" data-act="settings">Settings</button>';
-  } else if(web && web.linked){
-    status='Signed in as '+esc(web.name||'you'); action='<button id="authAct" class="pillbtn ghost" data-act="settings">Settings</button>';
-  } else if(web && web.id){
-    status='Voting anonymously'; action='<button id="authAct" class="pillbtn ghost" data-act="settings">Settings</button>';
-  } else {
-    status='Not logged in'; action='<button id="authAct" class="pillbtn" data-act="connect">Connect Telegram</button>';
-  }
-  b.innerHTML='<div class="authbox-s">'+status+'</div><div class="authbox-a">'+action+'</div>';
+  var status = admin.me ? 'Signed in as admin'
+    : (web && web.linked) ? 'Signed in as '+esc(web.name||'you')
+    : (web && web.id) ? 'Voting anonymously'
+    : 'Not logged in';
+  b.innerHTML='<div class="authbox-s">'+status+'</div><div class="authbox-a"><button id="authAct" class="pillbtn ghost">Settings</button></div>';
   b.style.display='block';
-  var a=el('authAct');
-  if(a){ a.onclick = a.getAttribute('data-act')==='connect' ? function(){ openAuthNudge(); } : openSettings; }
+  var a=el('authAct'); if(a) a.onclick=openSettings;
 }
 // Force-open the Telegram nudge. The optional onSkip runs if the user picks
 // keep voting anonymously — used to gate Start voting behind the prompt.
@@ -1975,30 +1978,42 @@ function openAuthNudge(onSkip){ authNudgeSkip=onSkip||null; var m=el('authmodal'
 // ---- Settings: edit curator profile (role + interests) + log out ----
 function openSettings(){ el('setmodal').classList.add('open'); renderSettings(); }
 function closeSettings(){ el('setmodal').classList.remove('open'); }
+// plrd.org theme icons.
+var SUN_SVG='<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" style="vertical-align:-3px"><circle cx="12" cy="12" r="4" stroke-width="1.5"></circle><path stroke-linecap="round" stroke-width="1.5" d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path></svg>';
+var MOON_SVG='<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" style="vertical-align:-3px"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"></path></svg>';
+function themeBtnHtml(){ var dark=document.documentElement.classList.contains('dark'); return (dark?SUN_SVG:MOON_SVG)+' <span style="vertical-align:middle">Switch to '+(dark?'light':'dark')+' mode</span>'; }
+function toggleTheme(){ var d=document.documentElement.classList.toggle('dark'); try{localStorage.setItem('radar-theme',d?'dark':'light');}catch(e){} var b=el('s-theme'); if(b) b.innerHTML=themeBtnHtml(); }
+// One log out for everything: clears the admin session AND the web/Telegram link.
+function fullLogout(){
+  var finish=function(){ web=null; admin.me=null; try{ localStorage.removeItem('radar-web'); }catch(e){} closeSettings(); renderAuthStatus(); adminToast('Logged out.'); render(); };
+  if(admin.me){ adminReq('POST','/api/admin/logout',{}).then(finish, finish); } else { finish(); }
+}
 function renderSettings(){
   var ov=state.overview||{lenses:{roles:[],areas:[]}};
   var canProfile = !!(web && web.token);
-  var curRole = (web && web.role) || '';
-  var curFocus = (web && web.focus) || [];
+  var loggedIn = !!(admin.me || (web && web.id));
   var body='';
+  // Appearance (theme) — available to everyone.
+  body+='<div class="setsec"><div class="setacct-h">Appearance</div>'+
+    '<button class="pillbtn ghost" id="s-theme">'+themeBtnHtml()+'</button></div>';
+  // Curator profile.
   if(canProfile){
+    var curRole=(web&&web.role)||'', curFocus=(web&&web.focus)||[];
     var roleOpts='<option value="">Prefer not to say</option>'+ov.lenses.roles.map(function(r){ return '<option value="'+r.key+'"'+(r.key===curRole?' selected':'')+'>'+esc(r.label)+'</option>'; }).join('');
     var chips=ov.lenses.areas.map(function(a){ var on=curFocus.indexOf(a.slug)>=0; return '<button type="button" class="lchip'+(on?' on':'')+'" data-sfocus="'+a.slug+'">'+esc(a.label)+'</button>'; }).join('');
-    body+='<p class="subnote">Your role and interests tag your votes for the peer-segment analysis. Update them anytime.</p>'+
+    body+='<div class="setsec"><div class="setacct-h">Curator profile</div>'+
+      '<p class="subnote" style="margin-top:0">Role and interests tag your votes for the peer-segment analysis.</p>'+
       '<div class="field"><label>Your role</label><select id="s-role">'+roleOpts+'</select></div>'+
       '<div class="field"><label>Your interests</label><div class="lchips" id="s-chips">'+chips+'</div></div>'+
-      '<div class="setrow"><button class="btn" id="s-save">Save profile</button></div>';
-  } else {
-    body+='<p class="subnote">Connect via Telegram to set up an editable curator profile.</p>';
+      '<div class="setrow"><button class="btn" id="s-save">Save profile</button></div></div>';
   }
-  // Account actions (log out).
-  var acts=[];
-  if(admin.me) acts.push('<span class="authlink" id="s-logout-admin">Log out of admin</span>');
-  if(web && web.id) acts.push('<span class="authlink" id="s-logout-web">'+(web.linked?'Sign out of this browser':'Forget my anonymous profile')+'</span>');
-  if(!acts.length) acts.push('<span class="muted">Not logged in.</span>');
-  body+='<div class="setacct"><div class="setacct-h">Account</div>'+acts.join(' · ')+'</div>';
+  // Account.
+  var acct = loggedIn
+    ? '<button class="pillbtn ghost" id="s-logout">Log out</button>'+(admin.me?'<div class="subnote" style="margin-top:8px">Logs you out of admin and disconnects Telegram.</div>':'')
+    : '<button class="pillbtn" id="s-connect">Connect Telegram</button>';
+  body+='<div class="setsec"><div class="setacct-h">Account</div>'+acct+'</div>';
   el('set-body').innerHTML=body;
-  // Wire interests toggles + save.
+  el('s-theme').onclick=toggleTheme;
   if(canProfile){
     el('set-body').querySelectorAll('[data-sfocus]').forEach(function(bn){ bn.addEventListener('click', function(){ bn.classList.toggle('on'); }); });
     el('s-save').addEventListener('click', function(){
@@ -2012,8 +2027,8 @@ function renderSettings(){
         }).catch(function(){ btn.disabled=false; btn.textContent='Save profile'; adminToast('Save failed.',false); });
     });
   }
-  var la=el('s-logout-admin'); if(la) la.onclick=function(){ closeSettings(); adminLogout(); };
-  var lw=el('s-logout-web'); if(lw) lw.onclick=function(){ web=null; try{saveWeb();localStorage.removeItem('radar-web');}catch(e){} closeSettings(); renderAuthStatus(); adminToast('Signed out.'); if(route()==='vote') render(); };
+  var lo=el('s-logout'); if(lo) lo.onclick=fullLogout;
+  var cn=el('s-connect'); if(cn) cn.onclick=function(){ closeSettings(); openAuthNudge(); };
 }
 function initAdmin(){
   // A valid httpOnly session cookie means admin mode. If there isn't one yet but
@@ -2057,13 +2072,7 @@ if(hamb){ hamb.addEventListener('click', function(){
 document.querySelectorAll('#nav button').forEach(function(b){
   b.addEventListener('click', function(){ location.hash = b.getAttribute('data-route'); closeMenu(); });
 });
-function updateThemeIcon(){ var b=el('themeToggle'); if(b){ var dark=document.documentElement.classList.contains('dark'); b.textContent = dark ? '☀️' : '🌙'; b.setAttribute('aria-label', dark?'Switch to light mode':'Switch to dark mode'); } }
-el('themeToggle').addEventListener('click', function(){
-  var d = document.documentElement.classList.toggle('dark');
-  try{ localStorage.setItem('radar-theme', d?'dark':'light'); }catch(e){}
-  updateThemeIcon();
-});
-updateThemeIcon();
+// Theme toggle now lives in Settings (see themeControl / toggleTheme).
 
 Promise.all([getJSON('/api/editions.json'), getJSON('/api/overview.json')]).then(function(res){
   state.editions = res[0].editions; state.edition = res[0].current || (state.editions[0]&&state.editions[0].edition);
