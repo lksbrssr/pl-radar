@@ -486,6 +486,29 @@ export function renderDashboard(): string {
     padding:8px 16px;font-size:13px;font-weight:500;cursor:pointer;transition:background .12s,border-color .12s;}
   .atab:hover{background:var(--gray-50);border-color:var(--muted);color:var(--ink);}
   .atab.on{background:var(--ink);color:var(--white);border-color:var(--ink);}
+  /* Admin: badge, toast, and overlay controls on Cards/Sources */
+  .adminbadge{align-items:center;gap:4px;font-size:9.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+    color:#a5813a;background:#fbf3dd;border:1px solid #ecd9a8;border-radius:999px;padding:2px 7px;margin-left:auto;}
+  html.dark .adminbadge{color:#f5c451;background:#3a2f12;border-color:#5c4a1a;}
+  .admtoast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);opacity:0;pointer-events:none;
+    background:var(--ink);color:var(--white);padding:10px 18px;border-radius:999px;font-size:13px;font-weight:500;
+    box-shadow:0 8px 24px rgba(0,0,0,.22);transition:opacity .18s,transform .18s;z-index:200;max-width:80vw;text-align:center;}
+  .admtoast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+  .admtoast.err{background:var(--neg);}
+  .cardadmin{display:flex;gap:6px;padding:0 14px 14px;flex-wrap:wrap;}
+  .abtn{font-size:12px;font-weight:600;padding:5px 11px;border-radius:8px;border:1px solid var(--line);
+    background:var(--gray-50);color:var(--ink);cursor:pointer;user-select:none;}
+  .abtn:hover{border-color:var(--muted);}
+  .abtn.danger{color:var(--neg);}
+  .abtn.danger:hover{background:rgba(214,69,69,.10);border-color:var(--neg);}
+  .adminband{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--gray-50);
+    border:1px dashed var(--line);border-radius:12px;padding:10px 14px;margin:2px 0 16px;font-size:13px;}
+  .adminband .abadge{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#a5813a;}
+  html.dark .adminband .abadge{color:#f5c451;}
+  .admrow{opacity:.62;}
+  .tilewrap{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(--white);}
+  .tilewrap .tile{border:none;border-radius:0;background:transparent;}
+  .tilewrap .cardadmin{border-top:1px solid var(--line);padding-top:10px;}
 </style></head>
 <body>
 <div class="app">
@@ -493,6 +516,7 @@ export function renderDashboard(): string {
     <div class="brand">
       <img class="logo" src="/icons/pl-logo-mark.svg" alt="Protocol Labs" width="26" height="30">
       <div class="wm">PL R&amp;D Radar</div>
+      <span class="adminbadge" id="adminBadge" style="display:none">🔐 Admin</span>
     </div>
     <button class="hamb" id="hamb" aria-label="Menu" aria-expanded="false">☰</button>
     <nav class="nav" id="nav">
@@ -503,7 +527,6 @@ export function renderDashboard(): string {
       <div class="navgap"></div>
       <button data-route="data">Insights</button>
       <button data-route="method">Methodology</button>
-      <button data-route="admin" id="navAdmin" style="display:none">🔐 Admin</button>
     </nav>
     <div class="side-foot">
       <button class="toggle" id="themeToggle">◐ Theme</button>
@@ -586,7 +609,7 @@ function areaIcon(slug, px){
     ';-webkit-mask:url('+u+') center/contain no-repeat;mask:url('+u+') center/contain no-repeat"></span>';
 }
 
-var state = { editions:[], edition:null, role:'', focus:[], dataSeg:'', overview:null, radar:null, radarCut:null, cards:{}, cardSearch:'' };
+var state = { editions:[], edition:null, role:'', focus:[], dataSeg:'', overview:null, radar:null, radarCut:null, cards:{}, cardSearch:'', showHidden:false, hiddenData:null, curSeg:'' };
 try{ var saved=JSON.parse(localStorage.getItem('radar-lens')||'{}'); if(saved){ state.role=saved.role||''; state.focus=saved.focus||[]; } }catch(e){}
 function saveLens(){ try{ localStorage.setItem('radar-lens', JSON.stringify({role:state.role,focus:state.focus})); }catch(e){} }
 function lensActive(){ return !!(state.role || (state.focus&&state.focus.length)); }
@@ -857,15 +880,6 @@ function renderData(){
       '<table><thead><tr><th>Attribute</th><th>Value</th><th>Demand</th><th>Supply</th><th>Signal</th></tr></thead><tbody>'+body+'</tbody></table>';
   }
 
-  // ---- curators table (unchanged) ----
-  var curatorRows = ov.curatorList.map(function(c){
-    var focus = (c.focus&&c.focus.length) ? c.focus.map(function(s){ return '<span class="chip"><i style="background:'+aColor(s)+'"></i>'+esc(aLabel(s))+'</span>'; }).join('') : '<span class="muted">all</span>';
-    var paused = c.status==='paused'?'<span class="pill">paused</span>':'';
-    return '<tr><td>'+esc(c.first_name||'Curator')+' '+(c.username?'<span class="muted">@'+esc(c.username)+'</span>':'')+' '+paused+'</td>'+
-      '<td class="muted">'+(c.role?esc(labelForRole(ov,c.role)):'—')+'</td><td>'+focus+'</td>'+
-      '<td><b>'+c.votes+'</b></td></tr>';
-  }).join('');
-
   v.innerHTML =
     '<h2 class="title">Curation data</h2>'+
     '<p class="lead">Every pairwise vote decomposed into the independent pull of each <b>angle</b>, <b>topic</b> and <b>format</b> — controlling for the others, per segment.</p>'+
@@ -881,15 +895,68 @@ function renderData(){
     devHtml+
     consensusHtml+
     sdHtml+
-    '<h2 class="title" style="font-size:22px">Curators ('+ov.curators+')</h2>'+
-    (curatorRows?'<table><thead><tr><th>Curator</th><th>Role</th><th>Focus areas</th><th>Votes</th></tr></thead><tbody>'+curatorRows+'</tbody></table>':'<div class="panel"><p class="muted">No curators yet.</p></div>');
+    (can('manage_admins')
+      ? '<h2 class="title" style="font-size:22px">Curators 🔐 <span class="tag tag-pub" style="vertical-align:middle">admin</span></h2>'+
+        '<p class="lead">Admin-only. Each curator’s self-selected profile (read-only), plus promote/revoke. Pick one for an individual preference lens.</p>'+
+        '<div id="adminCurators"><div class="loading">Loading curators…</div></div>'
+      : '');
 
   var ss=el('selSeg'); if(ss) ss.addEventListener('change', function(e){ state.dataSeg=e.target.value; renderData(); });
+  if(can('manage_admins')) loadAdminCurators();
+}
+
+// Admin-only curator roster + individual-preference lens (Insights overlay).
+function loadAdminCurators(){
+  var m=el('adminCurators'); if(!m) return; var ov=state.overview;
+  adminReq('GET','/api/admin/curators').then(function(r){
+    var cs=(r.body&&r.body.curators)||[], roots=(r.body&&r.body.rootIds)||[];
+    var curOpts='<option value="">— pick a curator —</option>'+cs.map(function(c){ return '<option value="'+c.id+'"'+(String(c.id)===String(state.curSeg)?' selected':'')+'>'+esc(c.first_name||c.username||('#'+c.id))+'</option>'; }).join('');
+    var rows=cs.map(function(c){
+      var isRoot=roots.indexOf(c.id)>=0;
+      var focus=(c.focus&&c.focus.length)?c.focus.map(function(s){return '<span class="chip"><i style="background:'+area(s).c+'"></i>'+esc(areaName(s))+'</span>';}).join(''):'<span class="muted">all</span>';
+      var toggle=isRoot?'<span class="muted">root</span>':'<span class="abtn" data-adm="'+c.id+'" data-on="'+(c.is_admin?0:1)+'">'+(c.is_admin?'Revoke admin':'Make admin')+'</span>';
+      return '<tr><td>'+esc(c.first_name||'Curator')+(c.username?' <span class="muted">@'+esc(c.username)+'</span>':'')+(isRoot?' ⭐':'')+(c.is_admin&&!isRoot?' <span class="pill">admin</span>':'')+'</td>'+
+        '<td class="muted">'+(c.role?esc(labelForRole(ov,c.role)):'—')+'</td><td>'+focus+'</td><td><b>'+c.votes+'</b></td><td>'+toggle+'</td></tr>';
+    }).join('');
+    m.innerHTML='<div class="controls"><div class="field"><label>Individual preference lens</label><select id="selCur">'+curOpts+'</select></div></div>'+
+      '<div id="curFitMount"></div>'+
+      '<table><thead><tr><th>Curator</th><th>Role</th><th>Focus areas</th><th>Votes</th><th>Admin</th></tr></thead><tbody>'+rows+'</tbody></table>';
+    var sc=el('selCur'); if(sc) sc.addEventListener('change', function(e){ state.curSeg=e.target.value; loadCuratorFit(); });
+    m.querySelectorAll('[data-adm]').forEach(function(b){ b.addEventListener('click', function(){
+      var id=b.getAttribute('data-adm'), on=b.getAttribute('data-on')==='1';
+      adminReq('POST','/api/admin/curators/'+id+'/admin',{admin:on}).then(function(x){ if(x.body&&x.body.ok){ adminToast(on?'Promoted to admin.':'Admin revoked.'); loadAdminCurators(); } else adminToast('Failed: '+((x.body&&x.body.error)||x.status),false); }); }); });
+    if(state.curSeg) loadCuratorFit();
+  });
+}
+function loadCuratorFit(){
+  var mount=el('curFitMount'); if(!mount) return;
+  if(!state.curSeg){ mount.innerHTML=''; return; }
+  mount.innerHTML='<div class="loading">Fitting this curator’s preferences…</div>';
+  adminReq('GET','/api/admin/curator-fit?id='+encodeURIComponent(state.curSeg)).then(function(r){
+    var b=r.body; if(!(b&&b.ok)){ mount.innerHTML='<div class="panel"><p class="muted">Could not load that curator.</p></div>'; return; }
+    var groups=state.overview.partWorths.groups;
+    var panels=groups.map(function(g){ return pwPanel(g.key,g.label,(b.byGroup&&b.byGroup[g.key])||[]); }).join('');
+    mount.innerHTML='<div class="panel" style="margin-bottom:14px"><b>'+esc(b.curator.name)+'</b> · '+b.nVotes+' vote'+(b.nVotes===1?'':'s')+'. Individual part-worths — thin data, so values below '+b.threshold+' comparisons are grayed and shouldn’t be over-read.</div>'+
+      '<div class="grid">'+panels+'</div>';
+  });
 }
 
 // ---- Vote view (in-browser king-of-the-hill) ----
 function renderVote(){
   if(web && web.id){ renderVoteSession(); } else { renderVoteOnboarding(); }
+  // Admin overlay: a one-tap “trigger a toss-up round” broadcast to curators.
+  if(can('trigger_rounds')){
+    var v=el('view'); if(!v) return;
+    var band=document.createElement('div'); band.className='adminband';
+    band.innerHTML='<span class="abadge">\ud83d\udd10 Admin</span><span>Prompt every active curator to vote now (independent of the weekly nudge).</span><button class="abtn" id="aRound" style="margin-left:auto">Send a round</button>';
+    v.insertBefore(band, v.firstChild);
+    el('aRound').addEventListener('click', function(){
+      var b=el('aRound'); b.disabled=true; var o=b.textContent; b.textContent='Sending\u2026';
+      adminReq('POST','/api/admin/round/trigger',{}).then(function(x){ b.disabled=false; b.textContent=o;
+        if(x.body&&x.body.ok) adminToast('Round sent to '+x.body.sent+' curator(s)'+(x.body.failed?(' ('+x.body.failed+' failed)'):'')+'.');
+        else adminToast('Failed: '+((x.body&&x.body.error)||x.status),false); });
+    });
+  }
 }
 
 function renderVoteOnboarding(){
@@ -1038,6 +1105,7 @@ function renderSources(){
       '<p class="lead" style="margin-top:-6px">Any content pulled from these sources may be surfaced to an external audience on the Radar.</p>'+
       '<div class="srcgrid">'+cards+'</div>'+
       add+
+      (can('manage_sources')?'<div id="srcAdminMount"></div>':'')+
       '<hr class="srcdivider">'+
       '<div class="srchead"><h3>Proprietary sources</h3><span class="tag tag-prop">internal</span></div>'+
       '<p class="lead">Internal, non-public feeds. Their content stays inside the org — <b>Internal Radar coming soon</b>.</p>'+
@@ -1046,6 +1114,32 @@ function renderSources(){
     // NB: pass no args — assigning openWiz directly would hand it the click Event
     // as its path, skipping the choice.
     var ob=el('opensrc'); if(ob) ob.onclick=function(){ openWiz(); };
+    if(can('manage_sources')) renderSourcesAdmin();
+  });
+}
+function renderSourcesAdmin(){
+  var m=el('srcAdminMount'); if(!m) return;
+  adminReq('GET','/api/admin/sources').then(function(r){
+    var ss=(r.body&&r.body.sources)||[];
+    m.innerHTML='<div class="srchead" style="margin-top:26px"><h3>Manage recurring sources</h3><span class="tag tag-pub">🔐 admin</span></div>'+
+      (ss.length?'<div class="panel"><table class="atable"><tr><th>Source</th><th>Cards</th><th>Active</th><th></th></tr>'+
+        ss.map(function(s){
+          return '<tr'+(s.active?'':' class="admrow"')+'><td><b>'+esc(s.name)+'</b><br><span class="muted" style="font-size:11px">'+esc(s.feedUrl)+'</span></td>'+
+            '<td>'+s.cards+'</td><td>'+(s.active?'yes':'off')+'</td>'+
+            '<td style="white-space:nowrap"><span class="abtn" data-sedit="'+esc(s.key)+'" data-sn="'+esc(s.name)+'" data-sd="'+esc(s.description||'')+'">Rename</span> '+
+            '<span class="abtn" data-stog="'+esc(s.key)+'" data-on="'+(s.active?0:1)+'">'+(s.active?'Deactivate':'Activate')+'</span> '+
+            '<span class="abtn danger" data-sdel="'+esc(s.key)+'" data-sn="'+esc(s.name)+'">Delete</span></td></tr>';
+        }).join('')+'</table><p class="muted" style="font-size:11px;margin-top:8px">Delete removes the source and the cards it produced.</p></div>'
+        :'<div class="panel"><p class="muted">No recurring (user-added) sources yet.</p></div>');
+    m.querySelectorAll('[data-stog]').forEach(function(b){ b.addEventListener('click',function(){
+      adminReq('PATCH','/api/admin/sources/'+encodeURIComponent(b.getAttribute('data-stog')),{active:b.getAttribute('data-on')==='1'}).then(function(x){ if(x.body&&x.body.ok){ adminToast('Source updated.'); renderSources(); } else adminToast('Failed.',false); }); }); });
+    m.querySelectorAll('[data-sedit]').forEach(function(b){ b.addEventListener('click',function(){
+      var name=prompt('Source name:', b.getAttribute('data-sn')); if(name===null) return;
+      var desc=prompt('Description (optional):', b.getAttribute('data-sd')||''); if(desc===null) return;
+      adminReq('PATCH','/api/admin/sources/'+encodeURIComponent(b.getAttribute('data-sedit')),{name:name.trim(),description:desc}).then(function(x){ if(x.body&&x.body.ok){ adminToast('Source updated.'); renderSources(); } else adminToast('Failed.',false); }); }); });
+    m.querySelectorAll('[data-sdel]').forEach(function(b){ b.addEventListener('click',function(){
+      if(!confirm('Delete source “'+b.getAttribute('data-sn')+'” and its cards?')) return;
+      adminReq('DELETE','/api/admin/sources/'+encodeURIComponent(b.getAttribute('data-sdel'))+'?withCards=1').then(function(x){ if(x.body&&x.body.ok){ adminToast('Removed source (+'+(x.body.removedCards||0)+' cards).'); renderSources(); } else adminToast('Failed.',false); }); }); });
   });
 }
 
@@ -1064,24 +1158,77 @@ function renderCards(){
       '<div class="field"><label>&nbsp;</label>'+
         '<button class="btn" id="cAdd" style="cursor:pointer;border:none;white-space:nowrap">Add a card</button></div>'+
     '</div>'+
+    (can('manage_cards')?'<div class="adminband"><span class="abadge">🔐 Admin</span><span>You can edit, hide or delete cards inline.</span>'+
+      '<button class="abtn" id="cHiddenToggle" style="margin-left:auto">'+(state.showHidden?'Hide hidden':'Show hidden')+'</button></div>':'')+
     '<div id="cardsMount"><div class="loading">Loading cards…</div></div>';
-  el('cMonth').addEventListener('change', function(e){ if(e.target.value){ state.edition=e.target.value; state.cardsData=null; loadCards(); } });
+  el('cMonth').addEventListener('change', function(e){ if(e.target.value){ state.edition=e.target.value; state.cardsData=null; state.hiddenData=null; loadCards(); } });
   el('cSearch').addEventListener('input', function(e){ state.cardSearch=e.target.value; renderCardsGrid(); });
   el('cAdd').addEventListener('click', function(){ openWiz(); });
+  var ht=el('cHiddenToggle'); if(ht) ht.addEventListener('click', function(){ state.showHidden=!state.showHidden; renderCards(); });
   if(state.cardsData && state.cardsData.edition===state.edition) renderCardsGrid(); else loadCards();
 }
 function loadCards(){
-  getJSON('/api/cards.json?edition='+encodeURIComponent(state.edition)).then(function(d){ state.cardsData=d; renderCardsGrid(); });
+  var reqs=[getJSON('/api/cards.json?edition='+encodeURIComponent(state.edition))];
+  // Admins optionally pull inactive (hidden) cards too, so they can restore them.
+  if(can('manage_cards') && state.showHidden){ reqs.push(adminReq('GET','/api/admin/cards?edition='+encodeURIComponent(state.edition))); }
+  Promise.all(reqs).then(function(a){
+    state.cardsData=a[0];
+    state.hiddenData = (a[1] && a[1].body && a[1].body.ok) ? { items:(a[1].body.items||[]).filter(function(x){return !x.active;}) } : null;
+    renderCardsGrid();
+  });
 }
 function cardTile(it){
   var media = it.image ? '<img src="'+esc(it.image)+'" loading="lazy" alt="" onerror="this.style.display=\'none\'">' : '<div class="ph"></div>';
   var meta = '<span>'+it.votes+' vote'+(it.votes===1?'':'s')+'</span>'+(it.winrate!=null?'<span>'+it.winrate+'% win</span>':'');
-  return '<button class="tile" data-key="'+esc(it.key)+'">'+
+  var tile='<button class="tile" data-key="'+esc(it.key)+'">'+
     '<div class="tile-media">'+media+
       '<span class="rankbadge'+(it.inCut?' cut':'')+'">#'+it.rank+'</span>'+
       '<span class="tile-area" style="background:rgba(19,19,22,.62)">'+esc(it.areaLabel)+'</span></div>'+
     '<div class="tile-body"><span class="kicker">'+esc(it.type)+(it.source?' · '+esc(it.source):'')+'</span>'+
       '<h4>'+esc(it.title)+'</h4><div class="tile-meta">'+meta+'</div></div></button>';
+  if(!can('manage_cards') || it.id==null) return tile;
+  return '<div class="tilewrap">'+tile+'<div class="cardadmin">'+
+    '<span class="abtn" data-cedit="'+it.id+'">Edit</span>'+
+    '<span class="abtn" data-chide="'+it.id+'">Hide</span>'+
+    '<span class="abtn danger" data-cdel="'+it.id+'" data-ct="'+esc(it.title)+'">Delete</span>'+
+    '</div></div>';
+}
+// Wire the inline admin actions on card tiles + the hidden-cards section.
+function bindCardAdmin(mount){
+  if(!can('manage_cards')||!mount) return;
+  var byId=function(id){ var a=(state.cardsData&&state.cardsData.items)||[]; var b=(state.hiddenData&&state.hiddenData.items)||[]; return a.concat(b).filter(function(x){return String(x.id)===String(id);})[0]; };
+  mount.querySelectorAll('[data-cedit]').forEach(function(s){ s.addEventListener('click', function(e){ e.stopPropagation(); openEditCard(byId(s.getAttribute('data-cedit'))); }); });
+  mount.querySelectorAll('[data-chide]').forEach(function(s){ s.addEventListener('click', function(e){ e.stopPropagation();
+    adminReq('PATCH','/api/admin/cards/'+s.getAttribute('data-chide'),{active:false}).then(function(x){ if(x.body&&x.body.ok){ adminToast('Card hidden.'); reloadCards(); } else adminToast('Failed to hide.',false); }); }); });
+  mount.querySelectorAll('[data-crestore]').forEach(function(s){ s.addEventListener('click', function(e){ e.stopPropagation();
+    adminReq('PATCH','/api/admin/cards/'+s.getAttribute('data-crestore'),{active:true}).then(function(x){ if(x.body&&x.body.ok){ adminToast('Card restored.'); reloadCards(); } else adminToast('Failed.',false); }); }); });
+  mount.querySelectorAll('[data-cdel]').forEach(function(s){ s.addEventListener('click', function(e){ e.stopPropagation();
+    if(!confirm('Delete “'+s.getAttribute('data-ct')+'”? Its votes are removed too.')) return;
+    adminReq('DELETE','/api/admin/cards/'+s.getAttribute('data-cdel')).then(function(x){ if(x.body&&x.body.ok){ adminToast('Card deleted.'); reloadCards(); } else adminToast('Failed to delete.',false); }); }); });
+}
+function reloadCards(){ state.cardsData=null; state.hiddenData=null; loadCards(); }
+// Prefilled edit modal (reuses the add-card wizard modal chrome + fields).
+function openEditCard(it){
+  if(!it) return;
+  wiz={ path:'admin-edit', editId:it.id, view:null, dedup:null, sample:[], inPool:0, result:null, err:'', data:{
+    title:it.title||'', href:it.href||'', description:it.description||'', area:it.areaSlug||'ai-robotics',
+    type:it.type||'Signal', source:it.source||'', angle:'', image:it.image||null, rationale:'' } };
+  el('wizmodal').classList.add('open');
+  renderAdminEditCard();
+}
+function renderAdminEditCard(){
+  setWiz('Edit card','Changes save immediately',
+    cardFormFields()+errHtml(),
+    '<button class="btn-ghost" id="ae-cancel">Cancel</button><button class="btn" id="ae-save">Save changes</button>');
+  bindCardImagePreview();
+  el('ae-cancel').onclick=function(){ closeWiz(); };
+  el('ae-save').onclick=function(){
+    readCardForm(); var d=wiz.data;
+    if(!d.title){ wiz.err='A title is required.'; renderAdminEditCard(); return; }
+    var btn=el('ae-save'); btn.disabled=true; btn.textContent='Saving…';
+    adminReq('PATCH','/api/admin/cards/'+wiz.editId,{title:d.title,description:d.description,areaSlug:d.area,type:d.type,source:d.source,image:d.image,href:d.href})
+      .then(function(x){ if(x.body&&x.body.ok){ closeWiz(); adminToast('Card updated.'); reloadCards(); } else { wiz.err='Save failed ('+((x.body&&x.body.error)||x.status)+').'; renderAdminEditCard(); } });
+  };
 }
 function renderCardsGrid(){
   var d=state.cardsData, mount=el('cardsMount'); if(!mount) return;
@@ -1108,12 +1255,26 @@ function renderCardsGrid(){
   if(onRadar.length) html+='<div class="cardsec"><span class="kicker">On the '+esc(d.label)+'</span><div class="tiles">'+onRadar.map(cardTile).join('')+'</div></div>';
   if(onRadar.length && running.length) html+='<hr class="cardsecdiv">';
   if(running.length) html+='<div class="cardsec"><span class="kicker">In the running</span><div class="tiles">'+running.map(cardTile).join('')+'</div></div>';
+  if(can('manage_cards') && state.showHidden){
+    var hid=(state.hiddenData&&state.hiddenData.items)||[];
+    if(q) hid=hid.filter(function(x){return (x.title||'').toLowerCase().indexOf(q)>=0;});
+    html+='<hr class="cardsecdiv"><div class="cardsec"><span class="kicker">Hidden · admin only ('+hid.length+')</span>'+
+      (hid.length?'<div class="tiles">'+hid.map(function(it){
+        return '<div class="tilewrap admrow"><button class="tile" data-key="'+esc(it.key)+'"><div class="tile-body">'+
+          '<span class="kicker">'+esc(it.type)+(it.source?' · '+esc(it.source):'')+'</span><h4>'+esc(it.title)+'</h4>'+
+          '<div class="tile-meta"><span>'+esc(it.areaLabel)+'</span><span>'+it.votes+' votes</span></div></div></button>'+
+          '<div class="cardadmin"><span class="abtn" data-cedit="'+it.id+'">Edit</span>'+
+          '<span class="abtn" data-crestore="'+it.id+'">Restore</span>'+
+          '<span class="abtn danger" data-cdel="'+it.id+'" data-ct="'+esc(it.title)+'">Delete</span></div></div>';
+      }).join('')+'</div>':'<p class="muted">No hidden cards in '+esc(d.label)+'.</p>')+'</div>';
+  }
   mount.innerHTML=html;
-  mount.querySelectorAll('[data-key]').forEach(function(b){ b.addEventListener('click', function(){
+  mount.querySelectorAll('.tile[data-key]').forEach(function(b){ b.addEventListener('click', function(){
     var k=b.getAttribute('data-key');
-    var it=d.items.filter(function(x){return x.key===k;})[0]; if(!it) return;
+    var it=(d.items.concat((state.hiddenData&&state.hiddenData.items)||[])).filter(function(x){return x.key===k;})[0]; if(!it) return;
     openCard({areaSlug:it.areaSlug,type:it.type,source:it.source,title:it.title,description:it.description,image:it.image,href:it.href,_rating:it.rating,_votes:it.votes,_winrate:it.winrate});
   }); });
+  bindCardAdmin(mount);
 }
 
 // ---- Methodology view (how the ranking works) ----
@@ -1251,6 +1412,7 @@ function setWiz(h,sub,body,foot){
 function errHtml(){ return wiz.err?'<div class="errbox">'+esc(wiz.err)+'</div>':''; }
 
 function renderWiz(){
+  if(wiz.path==='admin-edit'){ renderAdminEditCard(); return; }
   if(!SUBMIT.checked){ setWiz('Add to the Radar','Loading\u2026','<div class="parsing"><span class="spin"></span>Getting things ready\u2026</div>',''); return; }
   if(SUBMIT.enabled && !submitKey){ renderUnlock(); return; }
   if(wiz.path===null){ renderWizChoice(); return; }
@@ -1676,137 +1838,38 @@ function render(){
   else if(r==='vote'){ renderVote(); }
   else if(r==='sources'){ renderSources(); }
   else if(r==='method'){ renderMethodology(); }
-  else if(r==='admin'){ renderAdmin(); }
+  else if(r==='admin'){ // sign-in landing from the bot's /admin link → capture token, then go to Cards
+    var t=magicToken(); if(t && !admin.me){ adminTok=t; initAdmin().then(function(){ try{history.replaceState(null,'','#cards');}catch(e){} render(); }); }
+    else { try{history.replaceState(null,'','#cards');}catch(e){ location.hash='cards'; } render(); }
+  }
 }
 
-// ---- Admin panel (gated by an admin magic-link token) ----
-var admin = { me:null, tab:'curators', data:null, msg:'', tried:false };
-function can(right){ return admin.me && (admin.me.root || (admin.me.rights||[]).indexOf(right)>=0); }
+// ---- Admin (overlays on Cards / Sources / Insights / Vote — no standalone tab) ----
+// Auth reuses the curator magic-link token (x-admin-token). See docs/admin-panel.md.
+var admin = { me:null };
+function can(right){ return !!(admin.me && (admin.me.root || (admin.me.rights||[]).indexOf(right)>=0)); }
+function adminBadge(){ var b=el('adminBadge'); if(!b) return; if(admin.me){ b.style.display='inline-flex'; b.title='Admin: '+admin.me.name+(admin.me.root?' (root)':''); } }
 function initAdmin(){
-  if(!adminTok) return Promise.resolve(false);
+  // The admin token is the same magic-link token used for web voting: prefer an
+  // explicit admin token, else the web identity's token, else one in the hash.
+  var t = adminTok || (web && web.token) || magicToken();
+  if(!t) return Promise.resolve(false);
+  adminTok = t;
   return adminReq('GET','/api/admin/me').then(function(r){
     if(r.status===200 && r.body && r.body.ok){
-      admin.me=r.body; var b=el('navAdmin'); if(b) b.style.display='';
+      admin.me=r.body; try{ localStorage.setItem('radar-admin', t); }catch(e){}
+      adminBadge();
       return true;
     }
-    // stale/invalid token — forget it silently
-    adminTok=null; try{ localStorage.removeItem('radar-admin'); }catch(e){}
+    if(localStorage.getItem('radar-admin')){ try{ localStorage.removeItem('radar-admin'); }catch(e){} }
     return false;
   }).catch(function(){ return false; });
 }
-function adminTabs(){
-  var tabs=[['curators','Curators','manage_admins'],['sources','Sources','manage_sources'],['cards','Cards','manage_cards'],['run','Run a round','trigger_rounds']]
-    .filter(function(t){ return can(t[2]); });
-  return '<div class="atabs">'+tabs.map(function(t){
-    return '<button class="atab'+(admin.tab===t[0]?' on':'')+'" data-atab="'+t[0]+'">'+esc(t[1])+'</button>';
-  }).join('')+'</div>';
-}
-function renderAdmin(){
-  var v=el('view');
-  // Self-initialise from a token in the hash (or a stored one) even when we
-  // arrive via a client-side nav rather than a full page load — boot's capture
-  // only fires on a cold load, so this makes the #admin?t=… link robust.
-  if(!admin.me){
-    var t=magicToken()||adminTok;
-    if(t && !admin.tried){
-      admin.tried=true; adminTok=t; try{localStorage.setItem('radar-admin',t);}catch(e){}
-      v.innerHTML='<h2 class="title">\ud83d\udd10 Admin</h2><div class="loading">Signing you in\u2026</div>';
-      initAdmin().then(function(ok){ if(ok){ try{history.replaceState(null,'','#admin');}catch(e){} } renderAdmin(); });
-      return;
-    }
-    v.innerHTML='<h2 class="title">Admin</h2><div class="panel"><p class="muted">This area needs an admin link. In Telegram, send <b>/admin</b> to the bot to get your private sign-in link.</p></div>'; return;
-  }
-  var tabsWithRight=[['curators','manage_admins'],['sources','manage_sources'],['cards','manage_cards'],['run','trigger_rounds']].filter(function(t){return can(t[1]);});
-  if(!tabsWithRight.some(function(t){return t[0]===admin.tab;})) admin.tab=(tabsWithRight[0]||['curators'])[0];
-  v.innerHTML='<h2 class="title">🔐 Admin</h2>'+
-    '<p class="lead">Signed in as <b>'+esc(admin.me.name)+'</b>'+(admin.me.root?' (root)':'')+'. '+esc((admin.me.rights||[]).join(', ')||'no rights')+'.</p>'+
-    adminTabs()+
-    (admin.msg?'<p class="lead" style="color:var(--accent)">'+esc(admin.msg)+'</p>':'')+
-    '<div id="adminMount"><div class="loading">Loading…</div></div>';
-  document.querySelectorAll('[data-atab]').forEach(function(b){ b.addEventListener('click',function(){ admin.tab=b.getAttribute('data-atab'); admin.msg=''; renderAdmin(); }); });
-  if(admin.tab==='curators') adminLoadCurators();
-  else if(admin.tab==='sources') adminLoadSources();
-  else if(admin.tab==='cards') adminLoadCards();
-  else if(admin.tab==='run') adminRenderRun();
-}
-function adminMsg(m){ admin.msg=m; renderAdmin(); }
-function adminLoadCurators(){
-  adminReq('GET','/api/admin/curators').then(function(r){
-    var m=el('adminMount'); if(!m) return; var cs=(r.body&&r.body.curators)||[];
-    if(!cs.length){ m.innerHTML='<div class="panel"><p class="muted">No curators yet.</p></div>'; return; }
-    m.innerHTML='<div class="panel"><table class="atable"><tr><th>Curator</th><th>Votes</th><th>Admin</th></tr>'+
-      cs.map(function(c){
-        var isRoot=(r.body.rootIds||[]).indexOf(c.id)>=0;
-        var label=esc(c.first_name||c.username||('#'+c.id))+(isRoot?' ⭐':'');
-        return '<tr><td>'+label+'</td><td>'+c.votes+'</td><td>'+
-          (isRoot?'<span class="muted">root</span>':
-            '<button class="btn btn-sm" data-adm="'+c.id+'" data-on="'+(c.is_admin?0:1)+'">'+(c.is_admin?'Revoke':'Make admin')+'</button>')+
-          '</td></tr>';
-      }).join('')+'</table></div>';
-    document.querySelectorAll('[data-adm]').forEach(function(b){ b.addEventListener('click',function(){
-      var id=b.getAttribute('data-adm'), on=b.getAttribute('data-on')==='1';
-      adminReq('POST','/api/admin/curators/'+id+'/admin',{admin:on}).then(function(x){
-        adminMsg(x.body&&x.body.ok?('Updated curator '+id):'Failed: '+((x.body&&x.body.error)||x.status));
-      });
-    }); });
-  });
-}
-function adminLoadSources(){
-  adminReq('GET','/api/admin/sources').then(function(r){
-    var m=el('adminMount'); if(!m) return; var ss=(r.body&&r.body.sources)||[];
-    if(!ss.length){ m.innerHTML='<div class="panel"><p class="muted">No recurring sources.</p></div>'; return; }
-    m.innerHTML='<div class="panel"><table class="atable"><tr><th>Source</th><th>Cards</th><th>Active</th><th></th></tr>'+
-      ss.map(function(s){
-        return '<tr><td><b>'+esc(s.name)+'</b><br><span class="muted" style="font-size:11px">'+esc(s.feedUrl)+'</span></td>'+
-          '<td>'+s.cards+'</td><td>'+(s.active?'yes':'<span class="muted">off</span>')+'</td>'+
-          '<td style="white-space:nowrap"><button class="btn btn-sm" data-src-tog="'+esc(s.key)+'" data-on="'+(s.active?0:1)+'">'+(s.active?'Deactivate':'Activate')+'</button> '+
-          '<button class="btn btn-sm" data-src-del="'+esc(s.key)+'" data-name="'+esc(s.name)+'">Delete</button></td></tr>';
-      }).join('')+'</table><p class="muted" style="font-size:11px;margin-top:8px">Delete also removes the source’s cards.</p></div>';
-    document.querySelectorAll('[data-src-tog]').forEach(function(b){ b.addEventListener('click',function(){
-      adminReq('PATCH','/api/admin/sources/'+encodeURIComponent(b.getAttribute('data-src-tog')),{active:b.getAttribute('data-on')==='1'}).then(function(x){ adminMsg(x.body&&x.body.ok?'Source updated.':'Failed.'); });
-    }); });
-    document.querySelectorAll('[data-src-del]').forEach(function(b){ b.addEventListener('click',function(){
-      var key=b.getAttribute('data-src-del');
-      if(!confirm('Delete source “'+b.getAttribute('data-name')+'” and its cards?')) return;
-      adminReq('DELETE','/api/admin/sources/'+encodeURIComponent(key)+'?withCards=1').then(function(x){ adminMsg(x.body&&x.body.ok?('Removed source (+'+(x.body.removedCards||0)+' cards).'):'Failed.'); });
-    }); });
-  });
-}
-function adminLoadCards(){
-  var ed=state.edition||'';
-  adminReq('GET','/api/admin/cards?edition='+encodeURIComponent(ed)).then(function(r){
-    var m=el('adminMount'); if(!m) return; var its=(r.body&&r.body.items)||[];
-    var head='<div class="controls"><div class="field"><label>Month</label><input type="month" id="aMonth" value="'+esc(ed)+'"></div></div>';
-    if(!its.length){ m.innerHTML='<div class="panel">'+head+'<p class="muted">No cards in '+esc((r.body&&r.body.label)||ed)+'.</p></div>'; bindAMonth(); return; }
-    m.innerHTML='<div class="panel">'+head+'<table class="atable"><tr><th>Card</th><th>Area</th><th>Votes</th><th></th></tr>'+
-      its.map(function(c){
-        return '<tr'+(c.active?'':' style="opacity:.5"')+'><td><b>'+esc(c.title)+'</b><br><span class="muted" style="font-size:11px">'+esc(c.source||'')+'</span></td>'+
-          '<td>'+esc(c.areaLabel)+'</td><td>'+c.votes+'</td>'+
-          '<td style="white-space:nowrap"><button class="btn btn-sm" data-card-tog="'+c.id+'" data-on="'+(c.active?0:1)+'">'+(c.active?'Hide':'Restore')+'</button> '+
-          '<button class="btn btn-sm" data-card-del="'+c.id+'" data-t="'+esc(c.title)+'">Delete</button></td></tr>';
-      }).join('')+'</table></div>';
-    bindAMonth();
-    document.querySelectorAll('[data-card-tog]').forEach(function(b){ b.addEventListener('click',function(){
-      adminReq('PATCH','/api/admin/cards/'+b.getAttribute('data-card-tog'),{active:b.getAttribute('data-on')==='1'}).then(function(x){ adminMsg(x.body&&x.body.ok?'Card updated.':'Failed.'); });
-    }); });
-    document.querySelectorAll('[data-card-del]').forEach(function(b){ b.addEventListener('click',function(){
-      if(!confirm('Delete card “'+b.getAttribute('data-t')+'”? Votes are removed too.')) return;
-      adminReq('DELETE','/api/admin/cards/'+b.getAttribute('data-card-del')).then(function(x){ adminMsg(x.body&&x.body.ok?'Card deleted.':'Failed.'); });
-    }); });
-  });
-}
-function bindAMonth(){ var i=el('aMonth'); if(i) i.addEventListener('change',function(e){ if(e.target.value){ state.edition=e.target.value; adminLoadCards(); } }); }
-function adminRenderRun(){
-  var m=el('adminMount'); if(!m) return;
-  m.innerHTML='<div class="panel"><h3>Trigger a toss-up round</h3>'+
-    '<p class="lead">Sends every active, onboarded Telegram curator a fresh match-up invite right now (independent of the weekly nudge).</p>'+
-    '<button class="btn" id="aRun" style="cursor:pointer">Send a round now</button></div>';
-  el('aRun').addEventListener('click',function(){
-    var b=el('aRun'); b.disabled=true; b.textContent='Sending…';
-    adminReq('POST','/api/admin/round/trigger',{}).then(function(x){
-      adminMsg(x.body&&x.body.ok?('Round sent to '+x.body.sent+' curator(s)'+(x.body.failed?(' ('+x.body.failed+' failed)'):'')+'.'):('Failed: '+((x.body&&x.body.error)||x.status)));
-    });
-  });
+// Lightweight toast for admin action feedback (create-on-demand).
+function adminToast(msg, ok){
+  var t=el('adminToast'); if(!t){ t=document.createElement('div'); t.id='adminToast'; t.className='admtoast'; document.body.appendChild(t); }
+  t.textContent=msg; t.className='admtoast show'+(ok===false?' err':'');
+  clearTimeout(adminToast._t); adminToast._t=setTimeout(function(){ var x=el('adminToast'); if(x) x.className='admtoast'; }, 3200);
 }
 var sidebar = document.querySelector('.sidebar');
 var hamb = el('hamb');
@@ -1826,8 +1889,11 @@ Promise.all([getJSON('/api/editions.json'), getJSON('/api/overview.json')]).then
   state.editions = res[0].editions; state.edition = res[0].current || (state.editions[0]&&state.editions[0].edition);
   state.overview = res[1];
   if(!state.editions.some(function(e){return e.edition===state.edition;}) && state.editions[0]) state.edition=state.editions[0].edition;
-  // Capture an admin deep link (#admin?t=…) before claimMagic reroutes tokens.
-  if(route()==='admin'){ var at=magicToken(); if(at){ adminTok=at; try{ localStorage.setItem('radar-admin',at); }catch(e){} try{ history.replaceState(null,'','#admin'); }catch(e){} } }
-  claimMagic().then(function(){ return initAdmin(); }).then(function(){ render(); });
+  var landedAdmin = route()==='admin';
+  if(landedAdmin){ var at=magicToken(); if(at){ adminTok=at; try{ localStorage.setItem('radar-admin',at); }catch(e){} } }
+  claimMagic().then(function(){ return initAdmin(); }).then(function(){
+    if(landedAdmin){ try{ history.replaceState(null,'','#cards'); }catch(e){ location.hash='cards'; } }
+    render();
+  });
 });
 `

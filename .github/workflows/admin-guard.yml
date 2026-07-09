@@ -1,0 +1,48 @@
+# Defense-in-depth for the admin trust boundary. Fails a PR that tries to
+# sneak in a hardcoded admin identity or a raw is_admin write outside the
+# sanctioned repo functions. Admins are defined ONLY by the ADMIN_IDS secret
+# and DB rows — never by code. See docs/admin-panel.md.
+name: admin-guard
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  no-hardcoded-admins:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: No hardcoded admin identities / self-grants
+        run: |
+          set -e
+          fail=0
+
+          # 1) adminIds must only ever be sourced from the ADMIN_IDS env var.
+          #    Flag any other assignment to an adminIds field.
+          if grep -rnE "adminIds\s*[:=]" src \
+               | grep -v "process.env.ADMIN_IDS" ; then
+            echo "::error::adminIds is set from something other than process.env.ADMIN_IDS"
+            fail=1
+          fi
+
+          # 2) Raw is_admin writes are only allowed in the sanctioned repo layer
+          #    (src/db/repo.ts). Anywhere else is suspicious.
+          if grep -rnE "is_admin\s*=\s*1|SET\s+is_admin" src \
+               | grep -v "src/db/repo.ts" ; then
+            echo "::error::is_admin is written outside src/db/repo.ts"
+            fail=1
+          fi
+
+          # 3) No hardcoded Telegram-style numeric IDs in the admin auth code.
+          if grep -rnE "\b[0-9]{7,}\b" src/admin ; then
+            echo "::error::hardcoded numeric id in src/admin (possible backdoor)"
+            fail=1
+          fi
+
+          if [ "$fail" = "1" ]; then
+            echo "admin-guard failed — see errors above."
+            exit 1
+          fi
+          echo "admin-guard passed."

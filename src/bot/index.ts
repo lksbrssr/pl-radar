@@ -84,7 +84,8 @@ bot.command('admin', async (ctx) => {
   const url = `${config.webUrl}/#admin?t=${encodeURIComponent(token)}`
   const rights = adminCtx.root ? 'all rights (root admin)' : [...adminCtx.rights].join(', ') || 'no rights yet'
   await ctx.reply(
-    `<b>Admin panel</b>\nOpen your private link (don’t share it — it signs you in):\n${url}\n\nAccess: ${rights}`,
+    `<b>Admin access</b>\nOpen your private link — don’t share it, it signs you in:\n${url}\n\n` +
+      `Admin controls then appear inline: edit/hide/delete on <b>Cards</b> &amp; <b>Sources</b>, the curator roster + per-curator lens on <b>Insights</b>, and a “send a round” button on <b>Vote</b>.\n\nAccess: ${rights}`,
     { parse_mode: 'HTML', link_preview_options: { is_disabled: true } },
   )
 })

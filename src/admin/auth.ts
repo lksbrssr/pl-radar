@@ -10,8 +10,8 @@
  * Two admin tiers:
  *   • ROOT  — a Telegram id in ADMIN_IDS. Always admin, holds every right,
  *             cannot be demoted from the panel (break-glass).
- *   • GRANT — a curator with `is_admin = 1`, holding exactly the rights in
- *             `curator_admin_rights`.
+ *   • GRANT — a curator whose `is_admin` flag is set, holding exactly the
+ *             rights listed in `curator_admin_rights`.
  */
 import type express from 'express'
 import { config, isAdmin as isRootAdmin } from '../config.js'

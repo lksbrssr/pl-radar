@@ -151,6 +151,16 @@ export function votesForProfile(p: Profile): VoteRow[] {
     .all(...w.params) as VoteRow[]
 }
 
+/** Every pairwise vote cast by a single curator (for the admin per-curator
+ *  Insights lens). Thin by nature, so callers should surface a low-N caveat. */
+export function votesForCurator(curatorId: number): VoteRow[] {
+  return db
+    .prepare(
+      'SELECT winner_card_id, loser_card_id FROM votes WHERE curator_id = ? ORDER BY id',
+    )
+    .all(curatorId) as VoteRow[]
+}
+
 /**
  * Rank one edition's cards through a profile. No filters => General Radar (every
  * vote). Otherwise only votes from curators matching the profile are counted,

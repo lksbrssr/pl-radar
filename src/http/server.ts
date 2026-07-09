@@ -33,6 +33,7 @@ import {
   computeDeviations,
   consensusContested,
   supplyDemandGap,
+  partWorthsForCurator,
   PARTWORTH_MIN_N,
   type RoleFit,
 } from '../ranking/partworths.js'
@@ -245,6 +246,7 @@ export function createServer() {
       const card = getCard(r.id)!
       const w = wins.get(r.id) ?? 0
       return {
+        id: card.id,
         key: card.key,
         title: card.title,
         description: card.description ?? undefined,
@@ -711,6 +713,9 @@ export function createServer() {
     if (typeof b.title === 'string') patch.title = b.title.trim()
     if (typeof b.description === 'string') patch.description = b.description
     if (typeof b.type === 'string') patch.type = b.type
+    if (typeof b.source === 'string') patch.source = b.source.trim() || null
+    if (typeof b.href === 'string' && b.href.trim()) patch.href = b.href.trim()
+    if (b.image === null || typeof b.image === 'string') patch.image = b.image || null
     if (typeof b.active === 'boolean') patch.active = b.active
     if (typeof b.areaSlug === 'string') {
       const area = FOCUS_AREAS.find((a) => a.slug === b.areaSlug)
@@ -731,6 +736,28 @@ export function createServer() {
     if (!removed) return res.status(404).json({ ok: false, error: 'not-found' })
     console.log(`[admin] card ${req.params.id} removed by ${res.locals.admin?.curatorId}`)
     res.json({ ok: true })
+  })
+
+  // --- Per-curator Insights lens (manage_admins) ---
+  // Part-worths fit on ONE curator's votes, same shape as a role fit so the
+  // Insights view can reuse its part-worth panels. Individual-level, so it's
+  // admin-only (aggregate segment cuts stay public).
+  app.get('/api/admin/curator-fit', (req, res) => {
+    if (!requireAdmin(req, res, 'manage_admins')) return
+    const id = Number(req.query.id)
+    if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: 'bad-id' })
+    const feats = cardFeatureMap()
+    const baseline = globalPartWorths(feats)
+    const fit = partWorthsForCurator(id, feats)
+    const cur = repo.getCurator(id)
+    res.json({
+      ok: true,
+      curator: cur ? { id, name: cur.first_name || cur.username || `#${id}`, role: cur.role } : { id, name: `#${id}` },
+      nVotes: fit.nVotes,
+      byGroup: fit.byGroup,
+      deviations: computeDeviations(fit, baseline),
+      threshold: PARTWORTH_MIN_N,
+    })
   })
 
   // --- Trigger a toss-up round (trigger_rounds) ---
@@ -792,7 +819,8 @@ export function createServer() {
       consensus: consensusContested(roleFits, feats),
       // View 4 — supply/demand gap (a sourcing instruction for ingestion).
       supplyDemand: supplyDemandGap(baseline, feats),
-      curatorList: repo.listCuratorsWithStats(),
+      // NB: the curator list (names/profiles) is intentionally NOT here — it's
+      // admin-only now, served by /api/admin/curators.
     })
   })
 

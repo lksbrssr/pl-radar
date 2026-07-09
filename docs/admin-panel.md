@@ -1,9 +1,22 @@
 # Admin panel (design + status)
 
 > **Status: DRAFT.** Backend (auth, capabilities, endpoints), the Telegram SSO
-> entry point, and a minimal admin UI are implemented. Polish + a couple of
-> capabilities are still TODO (see the checklist at the bottom). Everything is
-> gated so it is safe to ship incrementally.
+> entry point, and the admin **overlays** are implemented. Polish + hardening are
+> still TODO (see the checklist at the bottom). Everything is gated so it is safe
+> to ship incrementally.
+
+> **No standalone Admin tab.** Admin is not a separate page — being an admin just
+> unlocks controls **inline** on the existing tabs (decided with the maintainer):
+> - **Cards** — edit / hide / delete each card, plus a “show hidden” toggle.
+> - **Sources** — rename / deactivate / delete recurring feeds.
+> - **Insights** — the curator roster (names/profiles) is **admin-only**, with
+>   promote/revoke toggles and an **individual-curator preference lens**. The
+>   aggregate “cut by curator type” stays public.
+> - **Vote** — a “send a round” (trigger toss-up) button.
+> - **Radar / Methodology** — no admin features.
+>
+> A small **🔐 Admin** badge in the sidebar tells a signed-in admin they're in
+> admin mode.
 
 The admin panel gives trusted people a place to **curate the pool and the
 sources** and to **run the crowd** without touching the database or the code.
@@ -85,16 +98,18 @@ link into a round, on demand (independent of the weekly cadence). Returns how
 many curators were pinged. (Later: also support seeding an in-app round for web
 voters.)
 
-## UI
+## UI (overlays, not a tab)
 
-A new **Admin** view in the dashboard, only shown when `GET /api/admin/me`
-succeeds. Tabs mirror the capabilities the caller holds:
+There is no `#admin` view. `GET /api/admin/me` runs on load (via the magic-link
+token); when it succeeds we set an in-memory `admin.me`, show the sidebar badge,
+and each tab's render function conditionally emits its admin controls via a
+`can(right)` check. The bot's `/admin` link (`#admin?t=…`) is a **sign-in
+landing**: it captures the token, resolves admin status, then redirects to
+`#cards`. Privacy: the public `/api/overview.json` no longer includes the
+curator list at all — names/profiles come only from `/api/admin/curators`.
 
-- **Curators** — table with a promote/demote toggle + per-right checkboxes.
-- **Sources** — every feed source with edit / deactivate / delete.
-- **Cards** — per-edition list (including inactive) with edit / deactivate /
-  delete and quick re-categorise (fixes an off-mission mis-tag).
-- **Run** — a "Send a round to N curators" button.
+The card **edit** modal reuses the add-card wizard's modal chrome + form fields
+(prefilled), saving via `PATCH /api/admin/cards/:id`.
 
 ## Data model
 
@@ -117,9 +132,13 @@ CREATE TABLE curator_admin_rights (
 - [x] repo helpers (admin flags, rights, card/source edit+remove)
 - [x] `/api/admin/*` routes behind the guard
 - [x] `/admin` Telegram command → SSO deep link
-- [x] Minimal Admin UI (curators / sources / cards / run)
+- [x] Overlays on Cards / Sources / Insights / Vote (no standalone tab)
+- [x] Curator roster made admin-only (removed from public overview)
+- [x] Individual-curator preference lens (`/api/admin/curator-fit`)
+- [x] Card edit modal (reuses the add-card wizard form)
+- [x] Sidebar admin badge
+- [x] CODEOWNERS + `admin-guard` CI check on the trust boundary
 - [ ] Short-TTL single-use admin tokens + httpOnly session cookie
 - [ ] Audit-log table (persist admin actions, not just console)
-- [ ] Card **edit** modal polish + re-categorise UX
 - [ ] Seed in-app rounds for web voters on manual trigger
 - [ ] Tests for the capability guard

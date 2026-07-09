@@ -906,7 +906,7 @@ export function listCuratorsForAdmin() {
     is_admin: number
     votes: number
   }[]
-  return rows.map((r) => ({ ...r, rights: listCuratorRights(r.id) }))
+  return rows.map((r) => ({ ...r, rights: listCuratorRights(r.id), focus: getFocusAreas(r.id) }))
 }
 
 // --- Card edits / removal ---------------------------------------------------
@@ -920,6 +920,9 @@ export function updateCard(
     area_slug?: string
     area_label?: string
     type?: string
+    source?: string | null
+    href?: string
+    image?: string | null
     active?: boolean
   },
 ): Card | undefined {
@@ -934,6 +937,9 @@ export function updateCard(
   if (patch.area_slug !== undefined) set('area_slug', patch.area_slug)
   if (patch.area_label !== undefined) set('area_label', patch.area_label)
   if (patch.type !== undefined) set('type', patch.type)
+  if (patch.source !== undefined) set('source', patch.source)
+  if (patch.href !== undefined) set('href', patch.href)
+  if (patch.image !== undefined) set('image', patch.image)
   if (patch.active !== undefined) set('active', patch.active ? 1 : 0)
   if (sets.length) db.prepare(`UPDATE cards SET ${sets.join(', ')} WHERE id = @id`).run(args)
   return getCard(id)
