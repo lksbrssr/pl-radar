@@ -249,7 +249,10 @@ export function renderDashboard(): string {
   .vote-cta h3{font-size:24px;margin-bottom:8px;}
   .vote-cta .btn{display:inline-block;margin-top:16px;background:var(--ink);color:var(--white);border-radius:999px;padding:12px 22px;font-weight:600;}
   .vote-cta .btn:hover{text-decoration:none;opacity:.9;}
-  .vform{max-width:560px;} .vform .field{margin-bottom:16px;display:block;}
+  .vform{max-width:560px;} .vform .field{margin-bottom:18px;display:block;}
+  .vform .field label{display:block;margin-bottom:8px;}
+  .vseeall{text-align:center;margin:2px 0 16px;}
+  .vseeall a{display:inline-block;}
   .vsplit{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:10px 0 18px;align-items:start;}
   @media(max-width:640px){.vsplit{grid-template-columns:1fr;}}
   .vcard{border:1px solid var(--line);background:var(--white);border-radius:16px;overflow:hidden;
@@ -274,17 +277,16 @@ export function renderDashboard(): string {
   .methsheet h3{font-family:Newsreader,serif;font-size:24px;margin:0 30px 10px 0;}
   .methsheet>p{color:var(--muted);font-size:14px;line-height:1.6;margin:0 0 14px;}
   .methsheet .mgrid{margin-top:12px;}
-  .vcard .vmedia{position:relative;aspect-ratio:16/9;}
+  .vcard .vmedia{position:relative;aspect-ratio:16/9;background:var(--gray-200);}
   .vcard .vmedia img,.vcard .vmedia .ph{width:100%;height:100%;object-fit:cover;display:block;}
   .vcard .varea{position:absolute;left:10px;bottom:10px;color:#fff;font-size:10px;font-weight:600;
-    letter-spacing:.05em;text-transform:uppercase;padding:3px 8px;border-radius:999px;}
+    letter-spacing:.05em;text-transform:uppercase;padding:3px 8px;border-radius:999px;background:rgba(19,19,22,.62);}
   .vcard .vbody{padding:14px 16px 18px;}
   .vcard .vbody .kicker{display:block;}
   .vcard .vbody h4{font-family:Newsreader,serif;font-size:19px;margin:6px 0 6px;}
   .vcard .vbody p{font-size:13px;color:var(--muted);margin:0;}
   .reign{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
     color:#8a6d00;background:#fdf0c8;padding:2px 8px;border-radius:999px;margin-bottom:2px;}
-  .vversus{text-align:center;color:var(--muted);font-size:13px;margin:0 0 10px;}
   .votefoot{display:flex;gap:16px;align-items:center;color:var(--muted);font-size:13px;flex-wrap:wrap;}
   .votefoot button,.votefoot a{color:var(--blue);background:none;border:none;cursor:pointer;font-size:13px;font-family:inherit;padding:0;}
   /* sources view */
@@ -868,10 +870,9 @@ function challenger(excludeCsv){
   return getJSON('/api/vote/challenger'+(excludeCsv?('?exclude='+encodeURIComponent(excludeCsv)):'')).then(function(r){ return r.card; });
 }
 function voteCardHtml(slot, card, reigning, entering){
-  var g=area(card.areaSlug);
   var media = card.image ? '<img src="'+esc(card.image)+'" alt="" onerror="this.style.display=\'none\'">' : '<div class="ph"></div>';
   return '<button class="vcard'+(entering?' entering':'')+'" data-slot="'+slot+'">'+
-    '<div class="vmedia" style="background:'+g.g+'">'+media+'<span class="varea" style="background:'+g.c+'">'+esc(card.areaLabel)+'</span></div>'+
+    '<div class="vmedia">'+media+'<span class="varea">'+esc(card.areaLabel)+'</span></div>'+
     '<div class="vbody">'+(reigning?'<span class="reign">✓ your pick</span>':'')+
       '<span class="kicker">'+esc(card.type)+(card.source?' · '+esc(card.source):'')+'</span>'+
       '<h4>'+esc(card.title)+'</h4>'+(card.description?'<p>'+esc(card.description)+'</p>':'')+
@@ -903,8 +904,8 @@ function renderVoteSession(){
     '<h2 class="title">Vote</h2>'+
     '<p class="lead">Tap the stronger signal for the Radar. Your pick stays and faces a new challenger.</p>'+
     '<div class="vprogress" id="vprog" style="display:none"><div id="vprogLabel"></div></div>'+
-    '<p class="vversus">🅰 &nbsp; vs &nbsp; 🅱</p>'+
     '<div class="vsplit" id="vsplit"><div id="slotA"><div class="loading">Loading match-up…</div></div><div id="slotB"></div></div>'+
+    '<div class="vseeall"><a class="btn-ghost" href="#cards">See all cards →</a></div>'+
     '<div class="votefoot"><button id="vReset">Change interests</button>'+
       '<a href="https://t.me/lksbrssr_radar_bot" target="_blank">Vote in Telegram instead</a></div>';
   el('vReset').addEventListener('click', function(){ web=null; saveWeb(); localStorage.removeItem('radar-web'); renderVote(); });
