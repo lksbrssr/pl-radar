@@ -995,7 +995,10 @@ function renderSources(){
       '<div class="srchead"><h3>Proprietary sources</h3><span class="tag tag-prop">internal</span></div>'+
       '<p class="lead">Internal, non-public feeds. Their content stays inside the org — <b>Internal Radar coming soon</b>.</p>'+
       '<div class="srcgrid">'+lockTiles+'</div>';
-    var ob=el('opensrc'); if(ob) ob.onclick=openWiz;
+    // Always open the choice screen first (recurring source vs. one-time card).
+    // NB: pass no args — assigning openWiz directly would hand it the click Event
+    // as its path, skipping the choice.
+    var ob=el('opensrc'); if(ob) ob.onclick=function(){ openWiz(); };
   });
 }
 
