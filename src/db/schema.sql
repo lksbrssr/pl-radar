@@ -28,6 +28,18 @@ CREATE TABLE IF NOT EXISTS curators (
   last_active_at TEXT
 );
 
+-- Admin rights granted to a curator (fine-grained capabilities). Root admins
+-- (ADMIN_IDS env) implicitly hold every right and aren't stored here. See
+-- docs/admin-panel.md and src/admin/auth.ts. `curators.is_admin` (added via a
+-- migration in db/index.ts) marks a granted admin; this table says what they can do.
+CREATE TABLE IF NOT EXISTS curator_admin_rights (
+  curator_id INTEGER NOT NULL REFERENCES curators(id) ON DELETE CASCADE,
+  right      TEXT NOT NULL,          -- manage_sources | manage_cards | manage_admins | trigger_rounds
+  granted_by INTEGER,                -- curator id of the granter (NULL for root/seed)
+  granted_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (curator_id, right)
+);
+
 -- Many-to-many: a curator's focus-area interests (segment tags).
 CREATE TABLE IF NOT EXISTS curator_focus (
   curator_id INTEGER NOT NULL REFERENCES curators(id) ON DELETE CASCADE,

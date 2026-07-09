@@ -5,6 +5,7 @@
 import { Bot, type Context } from 'grammy'
 import { config, isAdmin } from '../config.js'
 import * as repo from '../db/repo.js'
+import { adminForCurator } from '../admin/auth.js'
 import { copy } from './copy.js'
 import { kb } from './keyboards.js'
 import { beginOnboarding, handleOnboardingCallback } from './onboarding.js'
@@ -61,6 +62,30 @@ bot.command('stats', async (ctx) => {
       `Active cards: <b>${repo.getActiveCards().length}</b>\n` +
       `Total votes: <b>${repo.totalVotes()}</b>`,
     { parse_mode: 'HTML' },
+  )
+})
+
+bot.command('admin', async (ctx) => {
+  if (!ctx.from) return
+  // Any admin (root ADMIN_IDS or a granted curator) gets an SSO deep link.
+  const adminCtx = adminForCurator(ctx.from.id)
+  if (!adminCtx) {
+    // Silent no-op for non-admins (don't advertise the panel's existence).
+    return
+  }
+  // Ensure the curator row exists so the magic-link token can attach to it
+  // (a root admin who never onboarded still needs a curators row).
+  repo.upsertCurator({
+    id: ctx.from.id,
+    username: ctx.from.username,
+    first_name: ctx.from.first_name,
+  })
+  const token = repo.getOrCreateCuratorWebToken(ctx.from.id)
+  const url = `${config.webUrl}/#admin?t=${encodeURIComponent(token)}`
+  const rights = adminCtx.root ? 'all rights (root admin)' : [...adminCtx.rights].join(', ') || 'no rights yet'
+  await ctx.reply(
+    `<b>Admin panel</b>\nOpen your private link (don’t share it — it signs you in):\n${url}\n\nAccess: ${rights}`,
+    { parse_mode: 'HTML', link_preview_options: { is_disabled: true } },
   )
 })
 

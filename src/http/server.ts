@@ -59,6 +59,8 @@ import { parseSourceDraft, NoFeedError } from '../submit/parse.js'
 import { FetchFailedError } from '../submit/fetch.js'
 import { LlmUnavailableError } from '../submit/llm.js'
 import { findDuplicate } from '../submit/dedup.js'
+import { requireAdmin, RIGHTS } from '../admin/auth.js'
+import { broadcastRound } from '../bot/broadcast.js'
 
 const REPO_URL = 'https://github.com/lksbrssr/plrd-radar-curator'
 
@@ -587,6 +589,158 @@ export function createServer() {
       ingest,
       ingestError,
     })
+  })
+
+  // ----------------------------------------------------------------------
+  // Admin panel (see docs/admin-panel.md). Every route is gated by an admin
+  // magic-link token (x-admin-token header) + a per-route capability. The
+  // whole surface is a no-op unless at least one root admin (ADMIN_IDS) exists.
+  // ----------------------------------------------------------------------
+
+  // Whoami — used by the UI to decide whether to show the Admin tab + which
+  // sub-tabs. Returns 401 for non-admins (the UI just hides the tab then).
+  app.get('/api/admin/me', (req, res) => {
+    const ctx = requireAdmin(req, res)
+    if (!ctx) return
+    res.json({
+      ok: true,
+      curatorId: ctx.curatorId,
+      name: ctx.name,
+      root: ctx.root,
+      rights: ctx.root ? [...RIGHTS] : [...ctx.rights],
+      allRights: [...RIGHTS],
+    })
+  })
+
+  // --- Curators + admin management (manage_admins) ---
+  app.get('/api/admin/curators', (req, res) => {
+    if (!requireAdmin(req, res, 'manage_admins')) return
+    res.json({ ok: true, curators: repo.listCuratorsForAdmin(), rootIds: config.adminIds })
+  })
+
+  app.post('/api/admin/curators/:id/admin', (req, res) => {
+    if (!requireAdmin(req, res, 'manage_admins')) return
+    const id = Number(req.params.id)
+    if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: 'bad-id' })
+    if (config.adminIds.includes(id))
+      return res.status(409).json({ ok: false, error: 'root-admin-immutable' })
+    const b = req.body ?? {}
+    const makeAdmin = !!b.admin
+    if (!makeAdmin) {
+      repo.setCuratorAdmin(id, false)
+      return res.json({ ok: true, id, admin: false, rights: [] })
+    }
+    const rights = Array.isArray(b.rights)
+      ? b.rights.filter((r: string) => (RIGHTS as readonly string[]).includes(r))
+      : [...RIGHTS] // promote with all rights by default
+    repo.setCuratorRights(id, rights, res.locals.admin?.curatorId)
+    res.json({ ok: true, id, admin: true, rights })
+  })
+
+  // --- Sources (manage_sources) ---
+  app.get('/api/admin/sources', (req, res) => {
+    if (!requireAdmin(req, res, 'manage_sources')) return
+    const sources = repo.listFeedSources(false).map((s) => ({
+      key: s.key,
+      name: s.name,
+      description: s.description,
+      feedUrl: s.feed_url,
+      homepage: s.homepage,
+      areaSlug: s.area_slug,
+      active: !!s.active,
+      cards: activeCardCountByKeyPrefix(s.key + '-'),
+      createdAt: s.created_at,
+    }))
+    res.json({ ok: true, sources })
+  })
+
+  app.patch('/api/admin/sources/:key', (req, res) => {
+    if (!requireAdmin(req, res, 'manage_sources')) return
+    const b = req.body ?? {}
+    const patch: Record<string, unknown> = {}
+    if (typeof b.name === 'string') patch.name = b.name.trim()
+    if (typeof b.description === 'string') patch.description = b.description
+    if (typeof b.active === 'boolean') patch.active = b.active
+    if (typeof b.areaSlug === 'string' || b.areaSlug === null)
+      patch.area_slug =
+        b.areaSlug && FOCUS_AREAS.some((a) => a.slug === b.areaSlug) ? b.areaSlug : null
+    const updated = repo.updateFeedSource(req.params.key, patch)
+    if (!updated) return res.status(404).json({ ok: false, error: 'not-found' })
+    console.log(`[admin] source ${req.params.key} edited by ${res.locals.admin?.curatorId}`)
+    res.json({ ok: true })
+  })
+
+  app.delete('/api/admin/sources/:key', (req, res) => {
+    if (!requireAdmin(req, res, 'manage_sources')) return
+    const withCards = req.query.withCards === '1' || req.query.withCards === 'true'
+    const r = repo.deleteFeedSource(req.params.key, withCards)
+    if (!r.source) return res.status(404).json({ ok: false, error: 'not-found' })
+    console.log(
+      `[admin] source ${req.params.key} removed by ${res.locals.admin?.curatorId} (cards: ${r.cards})`,
+    )
+    res.json({ ok: true, removedCards: r.cards })
+  })
+
+  // --- Cards (manage_cards) ---
+  app.get('/api/admin/cards', (req, res) => {
+    if (!requireAdmin(req, res, 'manage_cards')) return
+    const edition = (req.query.edition as string) || currentEdition()
+    const items = repo.listEditionCardsAdmin(edition).map((c) => ({
+      id: c.id,
+      key: c.key,
+      title: c.title,
+      description: c.description ?? undefined,
+      href: c.href,
+      source: c.source ?? undefined,
+      type: c.type,
+      areaSlug: c.area_slug,
+      areaLabel: c.area_label,
+      active: !!c.active,
+      votes: c.matches,
+    }))
+    res.json({ ok: true, edition, label: editionLabel(edition), items })
+  })
+
+  app.patch('/api/admin/cards/:id', (req, res) => {
+    if (!requireAdmin(req, res, 'manage_cards')) return
+    const id = Number(req.params.id)
+    const b = req.body ?? {}
+    const patch: Record<string, unknown> = {}
+    if (typeof b.title === 'string') patch.title = b.title.trim()
+    if (typeof b.description === 'string') patch.description = b.description
+    if (typeof b.type === 'string') patch.type = b.type
+    if (typeof b.active === 'boolean') patch.active = b.active
+    if (typeof b.areaSlug === 'string') {
+      const area = FOCUS_AREAS.find((a) => a.slug === b.areaSlug)
+      if (area) {
+        patch.area_slug = area.slug
+        patch.area_label = area.label
+      }
+    }
+    const updated = repo.updateCard(id, patch)
+    if (!updated) return res.status(404).json({ ok: false, error: 'not-found' })
+    console.log(`[admin] card ${id} edited by ${res.locals.admin?.curatorId}`)
+    res.json({ ok: true })
+  })
+
+  app.delete('/api/admin/cards/:id', (req, res) => {
+    if (!requireAdmin(req, res, 'manage_cards')) return
+    const removed = repo.deleteCard(Number(req.params.id))
+    if (!removed) return res.status(404).json({ ok: false, error: 'not-found' })
+    console.log(`[admin] card ${req.params.id} removed by ${res.locals.admin?.curatorId}`)
+    res.json({ ok: true })
+  })
+
+  // --- Trigger a toss-up round (trigger_rounds) ---
+  app.post('/api/admin/round/trigger', async (req, res) => {
+    if (!requireAdmin(req, res, 'trigger_rounds')) return
+    try {
+      const r = await broadcastRound()
+      console.log(`[admin] round broadcast by ${res.locals.admin?.curatorId}: ${JSON.stringify(r)}`)
+      res.json({ ok: true, ...r })
+    } catch (err) {
+      res.status(400).json({ ok: false, error: String((err as Error)?.message || err) })
+    }
   })
 
   // Everything the Data view needs, in one call. Preference is decomposed with

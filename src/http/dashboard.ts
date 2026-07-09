@@ -474,6 +474,11 @@ export function renderDashboard(): string {
   .btn:hover{text-decoration:none;opacity:.9;}
   .close{position:absolute;top:12px;right:14px;background:rgba(0,0,0,.4);color:#fff;border:none;width:34px;height:34px;border-radius:50%;font-size:18px;cursor:pointer;}
   .loading{color:var(--muted);padding:40px 0;text-align:center;}
+  .atable{width:100%;border-collapse:collapse;font-size:13px;}
+  .atable th{text-align:left;color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.04em;padding:6px 10px;border-bottom:1px solid var(--line);}
+  .atable td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top;}
+  .atable tr:last-child td{border-bottom:none;}
+  .btn.btn-sm[disabled]{opacity:.5;cursor:default;}
 </style></head>
 <body>
 <div class="app">
@@ -491,6 +496,7 @@ export function renderDashboard(): string {
       <div class="navgap"></div>
       <button data-route="data">Insights</button>
       <button data-route="method">Methodology</button>
+      <button data-route="admin" id="navAdmin" style="display:none">🔐 Admin</button>
     </nav>
     <div class="side-foot">
       <button class="toggle" id="themeToggle">◐ Theme</button>
@@ -591,8 +597,16 @@ function magicToken(){
   var h=location.hash.slice(1); var i=h.indexOf('?'); if(i<0) return '';
   try{ return new URLSearchParams(h.slice(i+1)).get('t')||''; }catch(e){ return ''; }
 }
+// Admin magic-link token (same web_token, sent as x-admin-token). Captured from
+// a #admin?t=… deep link the bot mints, then persisted for later visits.
+var adminTok=null; try{ adminTok=localStorage.getItem('radar-admin')||null; }catch(e){}
+function adminHeaders(){ var h={'Content-Type':'application/json'}; if(adminTok) h['x-admin-token']=adminTok; return h; }
+function adminReq(method,path,body){
+  return fetch(path,{method:method,headers:adminHeaders(),body:body?JSON.stringify(body):undefined})
+    .then(function(r){ return r.json().then(function(j){return {status:r.status,body:j};},function(){return {status:r.status,body:{}};}); });
+}
 function claimMagic(){
-  var t=magicToken(); if(!t) return Promise.resolve(false);
+  var t=magicToken(); if(!t || route()==='admin') return Promise.resolve(false);
   return fetch('/api/web/claim',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:t})})
     .then(function(r){ return r.ok?r.json():null; }).then(function(j){
       if(j&&j.ok){
@@ -1653,6 +1667,125 @@ function render(){
   else if(r==='vote'){ renderVote(); }
   else if(r==='sources'){ renderSources(); }
   else if(r==='method'){ renderMethodology(); }
+  else if(r==='admin'){ renderAdmin(); }
+}
+
+// ---- Admin panel (gated by an admin magic-link token) ----
+var admin = { me:null, tab:'curators', data:null, msg:'' };
+function can(right){ return admin.me && (admin.me.root || (admin.me.rights||[]).indexOf(right)>=0); }
+function initAdmin(){
+  if(!adminTok) return Promise.resolve(false);
+  return adminReq('GET','/api/admin/me').then(function(r){
+    if(r.status===200 && r.body && r.body.ok){
+      admin.me=r.body; var b=el('navAdmin'); if(b) b.style.display='';
+      return true;
+    }
+    // stale/invalid token — forget it silently
+    adminTok=null; try{ localStorage.removeItem('radar-admin'); }catch(e){}
+    return false;
+  }).catch(function(){ return false; });
+}
+function adminTabs(){
+  var tabs=[['curators','Curators','manage_admins'],['sources','Sources','manage_sources'],['cards','Cards','manage_cards'],['run','Run a round','trigger_rounds']]
+    .filter(function(t){ return can(t[2]); });
+  return '<div class="controls" style="gap:8px">'+tabs.map(function(t){
+    return '<button class="btn'+(admin.tab===t[0]?'':' btn-ghost')+'" data-atab="'+t[0]+'" style="cursor:pointer">'+esc(t[1])+'</button>';
+  }).join('')+'</div>';
+}
+function renderAdmin(){
+  var v=el('view');
+  if(!admin.me){ v.innerHTML='<h2 class="title">Admin</h2><div class="panel"><p class="muted">This area needs an admin link. In Telegram, send <b>/admin</b> to the bot to get your private sign-in link.</p></div>'; return; }
+  var tabsWithRight=[['curators','manage_admins'],['sources','manage_sources'],['cards','manage_cards'],['run','trigger_rounds']].filter(function(t){return can(t[1]);});
+  if(!tabsWithRight.some(function(t){return t[0]===admin.tab;})) admin.tab=(tabsWithRight[0]||['curators'])[0];
+  v.innerHTML='<h2 class="title">🔐 Admin</h2>'+
+    '<p class="lead">Signed in as <b>'+esc(admin.me.name)+'</b>'+(admin.me.root?' (root)':'')+'. '+esc((admin.me.rights||[]).join(', ')||'no rights')+'.</p>'+
+    adminTabs()+
+    (admin.msg?'<p class="lead" style="color:var(--accent)">'+esc(admin.msg)+'</p>':'')+
+    '<div id="adminMount"><div class="loading">Loading…</div></div>';
+  document.querySelectorAll('[data-atab]').forEach(function(b){ b.addEventListener('click',function(){ admin.tab=b.getAttribute('data-atab'); admin.msg=''; renderAdmin(); }); });
+  if(admin.tab==='curators') adminLoadCurators();
+  else if(admin.tab==='sources') adminLoadSources();
+  else if(admin.tab==='cards') adminLoadCards();
+  else if(admin.tab==='run') adminRenderRun();
+}
+function adminMsg(m){ admin.msg=m; renderAdmin(); }
+function adminLoadCurators(){
+  adminReq('GET','/api/admin/curators').then(function(r){
+    var m=el('adminMount'); if(!m) return; var cs=(r.body&&r.body.curators)||[];
+    if(!cs.length){ m.innerHTML='<div class="panel"><p class="muted">No curators yet.</p></div>'; return; }
+    m.innerHTML='<div class="panel"><table class="atable"><tr><th>Curator</th><th>Votes</th><th>Admin</th></tr>'+
+      cs.map(function(c){
+        var isRoot=(r.body.rootIds||[]).indexOf(c.id)>=0;
+        var label=esc(c.first_name||c.username||('#'+c.id))+(isRoot?' ⭐':'');
+        return '<tr><td>'+label+'</td><td>'+c.votes+'</td><td>'+
+          (isRoot?'<span class="muted">root</span>':
+            '<button class="btn btn-sm" data-adm="'+c.id+'" data-on="'+(c.is_admin?0:1)+'">'+(c.is_admin?'Revoke':'Make admin')+'</button>')+
+          '</td></tr>';
+      }).join('')+'</table></div>';
+    document.querySelectorAll('[data-adm]').forEach(function(b){ b.addEventListener('click',function(){
+      var id=b.getAttribute('data-adm'), on=b.getAttribute('data-on')==='1';
+      adminReq('POST','/api/admin/curators/'+id+'/admin',{admin:on}).then(function(x){
+        adminMsg(x.body&&x.body.ok?('Updated curator '+id):'Failed: '+((x.body&&x.body.error)||x.status));
+      });
+    }); });
+  });
+}
+function adminLoadSources(){
+  adminReq('GET','/api/admin/sources').then(function(r){
+    var m=el('adminMount'); if(!m) return; var ss=(r.body&&r.body.sources)||[];
+    if(!ss.length){ m.innerHTML='<div class="panel"><p class="muted">No recurring sources.</p></div>'; return; }
+    m.innerHTML='<div class="panel"><table class="atable"><tr><th>Source</th><th>Cards</th><th>Active</th><th></th></tr>'+
+      ss.map(function(s){
+        return '<tr><td><b>'+esc(s.name)+'</b><br><span class="muted" style="font-size:11px">'+esc(s.feedUrl)+'</span></td>'+
+          '<td>'+s.cards+'</td><td>'+(s.active?'yes':'<span class="muted">off</span>')+'</td>'+
+          '<td style="white-space:nowrap"><button class="btn btn-sm" data-src-tog="'+esc(s.key)+'" data-on="'+(s.active?0:1)+'">'+(s.active?'Deactivate':'Activate')+'</button> '+
+          '<button class="btn btn-sm" data-src-del="'+esc(s.key)+'" data-name="'+esc(s.name)+'">Delete</button></td></tr>';
+      }).join('')+'</table><p class="muted" style="font-size:11px;margin-top:8px">Delete also removes the source’s cards.</p></div>';
+    document.querySelectorAll('[data-src-tog]').forEach(function(b){ b.addEventListener('click',function(){
+      adminReq('PATCH','/api/admin/sources/'+encodeURIComponent(b.getAttribute('data-src-tog')),{active:b.getAttribute('data-on')==='1'}).then(function(x){ adminMsg(x.body&&x.body.ok?'Source updated.':'Failed.'); });
+    }); });
+    document.querySelectorAll('[data-src-del]').forEach(function(b){ b.addEventListener('click',function(){
+      var key=b.getAttribute('data-src-del');
+      if(!confirm('Delete source “'+b.getAttribute('data-name')+'” and its cards?')) return;
+      adminReq('DELETE','/api/admin/sources/'+encodeURIComponent(key)+'?withCards=1').then(function(x){ adminMsg(x.body&&x.body.ok?('Removed source (+'+(x.body.removedCards||0)+' cards).'):'Failed.'); });
+    }); });
+  });
+}
+function adminLoadCards(){
+  var ed=state.edition||'';
+  adminReq('GET','/api/admin/cards?edition='+encodeURIComponent(ed)).then(function(r){
+    var m=el('adminMount'); if(!m) return; var its=(r.body&&r.body.items)||[];
+    var head='<div class="controls"><div class="field"><label>Month</label><input type="month" id="aMonth" value="'+esc(ed)+'"></div></div>';
+    if(!its.length){ m.innerHTML='<div class="panel">'+head+'<p class="muted">No cards in '+esc((r.body&&r.body.label)||ed)+'.</p></div>'; bindAMonth(); return; }
+    m.innerHTML='<div class="panel">'+head+'<table class="atable"><tr><th>Card</th><th>Area</th><th>Votes</th><th></th></tr>'+
+      its.map(function(c){
+        return '<tr'+(c.active?'':' style="opacity:.5"')+'><td><b>'+esc(c.title)+'</b><br><span class="muted" style="font-size:11px">'+esc(c.source||'')+'</span></td>'+
+          '<td>'+esc(c.areaLabel)+'</td><td>'+c.votes+'</td>'+
+          '<td style="white-space:nowrap"><button class="btn btn-sm" data-card-tog="'+c.id+'" data-on="'+(c.active?0:1)+'">'+(c.active?'Hide':'Restore')+'</button> '+
+          '<button class="btn btn-sm" data-card-del="'+c.id+'" data-t="'+esc(c.title)+'">Delete</button></td></tr>';
+      }).join('')+'</table></div>';
+    bindAMonth();
+    document.querySelectorAll('[data-card-tog]').forEach(function(b){ b.addEventListener('click',function(){
+      adminReq('PATCH','/api/admin/cards/'+b.getAttribute('data-card-tog'),{active:b.getAttribute('data-on')==='1'}).then(function(x){ adminMsg(x.body&&x.body.ok?'Card updated.':'Failed.'); });
+    }); });
+    document.querySelectorAll('[data-card-del]').forEach(function(b){ b.addEventListener('click',function(){
+      if(!confirm('Delete card “'+b.getAttribute('data-t')+'”? Votes are removed too.')) return;
+      adminReq('DELETE','/api/admin/cards/'+b.getAttribute('data-card-del')).then(function(x){ adminMsg(x.body&&x.body.ok?'Card deleted.':'Failed.'); });
+    }); });
+  });
+}
+function bindAMonth(){ var i=el('aMonth'); if(i) i.addEventListener('change',function(e){ if(e.target.value){ state.edition=e.target.value; adminLoadCards(); } }); }
+function adminRenderRun(){
+  var m=el('adminMount'); if(!m) return;
+  m.innerHTML='<div class="panel"><h3>Trigger a toss-up round</h3>'+
+    '<p class="lead">Sends every active, onboarded Telegram curator a fresh match-up invite right now (independent of the weekly nudge).</p>'+
+    '<button class="btn" id="aRun" style="cursor:pointer">Send a round now</button></div>';
+  el('aRun').addEventListener('click',function(){
+    var b=el('aRun'); b.disabled=true; b.textContent='Sending…';
+    adminReq('POST','/api/admin/round/trigger',{}).then(function(x){
+      adminMsg(x.body&&x.body.ok?('Round sent to '+x.body.sent+' curator(s)'+(x.body.failed?(' ('+x.body.failed+' failed)'):'')+'.'):('Failed: '+((x.body&&x.body.error)||x.status)));
+    });
+  });
 }
 var sidebar = document.querySelector('.sidebar');
 var hamb = el('hamb');
@@ -1672,6 +1805,8 @@ Promise.all([getJSON('/api/editions.json'), getJSON('/api/overview.json')]).then
   state.editions = res[0].editions; state.edition = res[0].current || (state.editions[0]&&state.editions[0].edition);
   state.overview = res[1];
   if(!state.editions.some(function(e){return e.edition===state.edition;}) && state.editions[0]) state.edition=state.editions[0].edition;
-  claimMagic().then(function(){ render(); });
+  // Capture an admin deep link (#admin?t=…) before claimMagic reroutes tokens.
+  if(route()==='admin'){ var at=magicToken(); if(at){ adminTok=at; try{ localStorage.setItem('radar-admin',at); }catch(e){} try{ history.replaceState(null,'','#admin'); }catch(e){} } }
+  claimMagic().then(function(){ return initAdmin(); }).then(function(){ render(); });
 });
 `
