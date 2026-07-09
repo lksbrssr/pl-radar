@@ -108,7 +108,12 @@ export function renderDashboard(): string {
     background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%235f6270' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
     background-repeat:no-repeat;background-position:right 13px center;}
   input[type="month"]{background:var(--white);color:var(--ink);border:1px solid var(--line);
-    border-radius:999px;padding:9px 15px;font-size:14px;cursor:pointer;font-family:inherit;}
+    border-radius:999px;padding:9px 16px;font-size:14px;font-weight:500;cursor:pointer;font-family:inherit;
+    min-width:148px;transition:border-color .12s,box-shadow .12s;}
+  input[type="month"]:hover{border-color:var(--muted);}
+  input[type="month"]:focus{outline:none;border-color:var(--ink);box-shadow:0 0 0 3px rgba(57,102,254,.14);}
+  input[type="month"]::-webkit-calendar-picker-indicator{opacity:.5;cursor:pointer;transition:opacity .12s;}
+  input[type="month"]:hover::-webkit-calendar-picker-indicator{opacity:.85;}
   html.dark input[type="month"]::-webkit-calendar-picker-indicator{filter:invert(0.8);}
   .searchbox{background:var(--white);color:var(--ink);border:1px solid var(--line);border-radius:999px;
     padding:9px 16px;font-size:14px;font-family:inherit;width:100%;}
@@ -321,8 +326,15 @@ export function renderDashboard(): string {
   .addsrc .btn{display:inline-block;border:none;}
   .srcdivider{border:none;border-top:1px solid var(--line);margin:30px 0 0;}
   /* cards view */
+  .cardctrls{position:sticky;top:0;z-index:20;background:var(--white);
+    margin:0 -28px 18px;padding:14px 28px;border-bottom:1px solid var(--line);}
+  @media(max-width:720px){.cardctrls{margin:0 -16px 16px;padding:12px 16px;}}
   .cardsec{margin-bottom:26px;}
   .cardsec .kicker{display:block;margin-bottom:12px;}
+  .cardsecdiv{border:none;border-top:1px solid var(--line);margin:6px 0 24px;}
+  .imgprev{margin-top:8px;border:1px solid var(--line);border-radius:10px;overflow:hidden;
+    aspect-ratio:16/9;background:var(--gray-200);}
+  .imgprev img{width:100%;height:100%;object-fit:cover;display:block;transition:opacity .15s;}
   .rankbadge{position:absolute;left:10px;top:10px;z-index:2;font-size:11px;font-weight:700;color:#fff;
     background:rgba(19,19,22,.62);border-radius:999px;padding:3px 9px;font-variant-numeric:tabular-nums;backdrop-filter:blur(2px);}
   .rankbadge.cut{background:linear-gradient(90deg,#3966FE,#12bfdf);}
@@ -446,6 +458,8 @@ export function renderDashboard(): string {
   /* modal */
   .modal{position:fixed;inset:0;background:rgba(19,19,22,.55);display:none;align-items:center;justify-content:center;padding:20px;z-index:50;}
   .modal.open{display:flex;}
+  /* Center pop-out modals over the content area (excluding the sidebar) on desktop. */
+  @media(min-width:721px){.modal{left:236px;}}
   .sheet{background:var(--white);border-radius:20px;max-width:560px;width:100%;overflow-y:auto;max-height:90vh;box-shadow:0 30px 80px rgba(0,0,0,.4);}
   .sheet-media{aspect-ratio:16/9;position:relative;}
   .sheet-media img,.sheet-media .ph{width:100%;height:100%;object-fit:cover;}
@@ -993,17 +1007,17 @@ function renderCards(){
   v.innerHTML =
     '<h2 class="title">Cards</h2>'+
     '<p class="lead" id="cardsLead">Every candidate competing for this edition\'s Radar.</p>'+
-    '<div class="controls"><div class="field"><label>Month</label>'+
+    '<div class="controls cardctrls"><div class="field"><label>Month</label>'+
       '<input type="month" id="cMonth" value="'+esc(state.edition)+'" min="'+esc(oldest)+'" max="'+esc(newest)+'"></div>'+
       '<div class="field searchfield"><label>Search</label>'+
         '<input type="text" id="cSearch" class="searchbox" placeholder="Search cards by keyword…" value="'+esc(state.cardSearch||'')+'"></div>'+
       '<div class="field"><label>&nbsp;</label>'+
-        '<button class="btn" id="cAdd" style="cursor:pointer;border:none;white-space:nowrap">➕ Add a card</button></div>'+
+        '<button class="btn" id="cAdd" style="cursor:pointer;border:none;white-space:nowrap">Add a card</button></div>'+
     '</div>'+
     '<div id="cardsMount"><div class="loading">Loading cards…</div></div>';
   el('cMonth').addEventListener('change', function(e){ if(e.target.value){ state.edition=e.target.value; state.cardsData=null; loadCards(); } });
   el('cSearch').addEventListener('input', function(e){ state.cardSearch=e.target.value; renderCardsGrid(); });
-  el('cAdd').addEventListener('click', function(){ openWiz('card'); });
+  el('cAdd').addEventListener('click', function(){ openWiz(); });
   if(state.cardsData && state.cardsData.edition===state.edition) renderCardsGrid(); else loadCards();
 }
 function loadCards(){
@@ -1041,8 +1055,9 @@ function renderCardsGrid(){
   var onRadar = items.filter(function(x){return x.inCut;});
   var running = items.filter(function(x){return !x.inCut;});
   var html='';
-  if(onRadar.length) html+='<div class="cardsec"><span class="kicker">📡 On the '+esc(d.label)+'</span><div class="tiles">'+onRadar.map(cardTile).join('')+'</div></div>';
-  if(running.length) html+='<div class="cardsec"><span class="kicker">⚔️ In the running</span><div class="tiles">'+running.map(cardTile).join('')+'</div></div>';
+  if(onRadar.length) html+='<div class="cardsec"><span class="kicker">On the '+esc(d.label)+'</span><div class="tiles">'+onRadar.map(cardTile).join('')+'</div></div>';
+  if(onRadar.length && running.length) html+='<hr class="cardsecdiv">';
+  if(running.length) html+='<div class="cardsec"><span class="kicker">In the running</span><div class="tiles">'+running.map(cardTile).join('')+'</div></div>';
   mount.innerHTML=html;
   mount.querySelectorAll('[data-key]').forEach(function(b){ b.addEventListener('click', function(){
     var k=b.getAttribute('data-key');
@@ -1208,14 +1223,14 @@ function renderWizChoice(){
   if(canAI){
     body='<p>Add one item right now, or wire up a feed the Radar re-checks daily. Paste a link and AI does the rest \u2014 you just review before it\'s added.</p>'+
       '<div class="pathgrid">'+
-      '<button class="pathcard" data-path="card"><span class="em">\ud83c\udccf</span><h4>Add a card</h4><p>Paste any URL \u2014 article, Reddit or X post, paper, video. AI turns it into a card you review, then it enters this month\'s pool.</p></button>'+
-      '<button class="pathcard" data-path="source"><span class="em">\ud83d\udef0\ufe0f</span><h4>Recurring source</h4><p>Paste a site or feed URL. We find its feed and re-check it about once a day for fresh candidates.</p></button>'+
+      '<button class="pathcard" data-path="card"><h4>Add a card</h4><p>Paste any URL \u2014 article, Reddit or X post, paper, video. AI turns it into a card you review, then it enters this month\'s pool.</p></button>'+
+      '<button class="pathcard" data-path="source"><h4>Recurring source</h4><p>Paste a site or feed URL. We find its feed and re-check it about once a day for fresh candidates.</p></button>'+
       '</div>';
   } else {
     body='<p>AI submission isn\'t enabled on this instance \u2014 but you can still contribute with a one-file pull request via your own coding agent.</p>'+
       '<div class="pathgrid">'+
-      '<button class="pathcard" data-path="card"><span class="em">\ud83c\udccf</span><h4>Single card</h4><p>Add one talk, paper or post via a small PR.</p></button>'+
-      '<button class="pathcard" data-path="source"><span class="em">\ud83d\udef0\ufe0f</span><h4>Recurring source</h4><p>Add a feed via a one-file PR.</p></button>'+
+      '<button class="pathcard" data-path="card"><h4>Single card</h4><p>Add one talk, paper or post via a small PR.</p></button>'+
+      '<button class="pathcard" data-path="source"><h4>Recurring source</h4><p>Add a feed via a one-file PR.</p></button>'+
       '</div>';
   }
   setWiz('Add to the Radar','Two ways to feed the pool',body,
@@ -1238,7 +1253,7 @@ function bindDedupOpens(){
 function dedupBanner(dd){
   var c=dd.card;
   var why = dd.reason==='identity' ? 'This exact link is already a candidate' : 'A card with the same title is already in the pool';
-  return '<div class="dedupbox">\u26a0\ufe0f <b>Looks like a duplicate.</b> '+esc(why)+(c.editionLabel?' ('+esc(c.editionLabel)+')':'')+': \u201c'+esc(c.title)+'\u201d.'+
+  return '<div class="dedupbox"><b>Looks like a duplicate.</b> '+esc(why)+(c.editionLabel?' ('+esc(c.editionLabel)+')':'')+': \u201c'+esc(c.title)+'\u201d.'+
     '<br><span class="dd-open" data-open="'+esc(c.title)+'" data-ed="'+esc(c.edition||'')+'">View the existing card \u2192</span></div>';
 }
 function cardFormFields(){
@@ -1248,7 +1263,9 @@ function cardFormFields(){
     '<div class="field"><label>Description</label><textarea id="f-desc">'+esc(d.description)+'</textarea></div>'+
     '<div class="field"><label>Focus area</label><select id="f-area">'+AREAS_W.map(function(a){return '<option value="'+a.slug+'"'+(a.slug===d.area?' selected':'')+'>'+esc(a.label)+'</option>';}).join('')+'</select></div>'+
     '<div class="field"><label>Type</label><select id="f-type">'+TYPES_W.map(function(t){return '<option'+(t===d.type?' selected':'')+'>'+t+'</option>';}).join('')+'</select></div>'+
-    '<div class="field"><label>Source attribution</label><input id="f-src" value="'+esc(d.source)+'" placeholder="Who to credit"></div>';
+    '<div class="field"><label>Source attribution</label><input id="f-src" value="'+esc(d.source)+'" placeholder="Who to credit"></div>'+
+    '<div class="field"><label>Hero image URL</label><input id="f-image" value="'+esc(d.image||'')+'" placeholder="https://…/image.jpg">'+
+      '<div class="imgprev" id="f-imgprev"'+(d.image?'':' style="display:none"')+'><img id="f-imgprev-img" src="'+esc(d.image||'')+'" alt="" onerror="this.style.opacity=0" onload="this.style.opacity=1"></div></div>';
 }
 function readCardForm(){
   var d=wiz.data;
@@ -1258,6 +1275,15 @@ function readCardForm(){
   if(el('f-area')) d.area=el('f-area').value;
   if(el('f-type')) d.type=el('f-type').value;
   if(el('f-src')) d.source=el('f-src').value.trim();
+  if(el('f-image')) d.image=el('f-image').value.trim()||null;
+}
+function bindCardImagePreview(){
+  var inp=el('f-image'); if(!inp) return;
+  inp.addEventListener('input', function(){
+    var v=inp.value.trim(), box=el('f-imgprev'), img=el('f-imgprev-img');
+    if(box) box.style.display=v?'block':'none';
+    if(img) img.src=v;
+  });
 }
 
 // ---- card path ----
@@ -1306,17 +1332,16 @@ function doParseCard(){
   }).catch(function(){ wiz.err='Network error. Add the details manually below.'; wiz.view='manual'; renderWiz(); });
 }
 function renderCardReview(){
-  var d=wiz.data, g=area(d.area);
-  var media = d.image ? '<div class="draftprev"><div class="dp-media" style="background:'+g.g+'"><img src="'+esc(d.image)+'" onerror="this.parentNode.parentNode.style.display=\'none\'"><span class="dp-area" style="background:'+g.c+'">'+esc(areaName(d.area))+'</span></div></div>' : '';
+  var d=wiz.data;
   setWiz('Review your card','AI filled this in \u2014 tweak anything',
-    (wiz.stale?'<div class="dedupbox">\u26a0\ufe0f <b>Might be too old.</b> '+esc(wiz.stale)+'</div>':'')+
+    (wiz.stale?'<div class="dedupbox"><b>Might be too old.</b> '+esc(wiz.stale)+'</div>':'')+
     (wiz.dedup?dedupBanner(wiz.dedup):'')+errHtml()+
     (d.rationale?'<p class="rationale">'+esc(d.rationale)+'</p>':'')+
-    media+cardFormFields(),
+    cardFormFields(),
     '<button class="btn-ghost" id="w-back">\u2190 Start over</button><button class="btn" id="w-add">Add to Radar \u2192</button>');
   el('w-back').onclick=function(){ wiz.view=null; wiz.dedup=null; wiz.err=''; renderWiz(); };
   el('w-add').onclick=doSubmitCard;
-  bindDedupOpens();
+  bindDedupOpens(); bindCardImagePreview();
 }
 function renderCardManual(){
   setWiz('Add a card manually','You fill in the details',
@@ -1326,6 +1351,7 @@ function renderCardManual(){
     '<button class="altlink" id="w-agent">Prepare a PR for my agent \u2192</button><button class="btn" id="w-add">Add to Radar \u2192</button>');
   el('w-add').onclick=doSubmitCard;
   el('w-agent').onclick=function(){ readCardForm(); wiz.view='agent'; renderWiz(); };
+  bindCardImagePreview();
 }
 function doSubmitCard(){
   readCardForm();
@@ -1345,7 +1371,7 @@ function renderCardDuplicate(){
   var c=wiz.dedup.card;
   var why = wiz.dedup.reason==='identity' ? 'That link is already a candidate this cycle.' : 'A card with the same title is already competing.';
   setWiz('Already on the Radar','This one\'s a duplicate',
-    '<div class="dedupbox">\u26a0\ufe0f <b>Not added \u2014 it\'s already here.</b><br>'+esc(why)+'</div>'+
+    '<div class="dedupbox"><b>Not added \u2014 it\'s already here.</b><br>'+esc(why)+'</div>'+
     '<p class="subnote">The existing card:</p>'+
     '<div class="draftprev" style="padding:14px 16px"><div class="kicker">'+esc(c.areaLabel||'')+(c.editionLabel?' \u00b7 '+esc(c.editionLabel):'')+'</div>'+
       '<h4 style="font-family:Newsreader,serif;font-size:19px;margin:6px 0 8px">'+esc(c.title)+'</h4>'+
@@ -1366,7 +1392,7 @@ function renderCardSuccess(){
 function renderAgentCard(){
   setWiz('Hand it to your agent','One-file pull request',
     '<p class="subnote">Paste this into Claude Code, Cursor, or your agent of choice \u2014 it adds your card to the shared Community source and opens a pull request.</p>'+
-    '<div class="repochip">\ud83d\udce6 '+esc(repoShort())+'</div>'+
+    '<div class="repochip">'+esc(repoShort())+'</div>'+
     '<div class="promptbox"><button class="btn btn-sm copy" id="wiz-copy">Copy</button><pre id="wiz-prompt">'+esc(promptCard())+'</pre></div>',
     '<button class="btn-ghost" id="w-back">\u2190 Back</button><span class="muted" style="font-size:12px">Review the diff before you approve it.</span>');
   el('w-back').onclick=function(){ if(SUBMIT.enabled){ wiz.view='manual'; } else { wiz.path=null; } renderWiz(); };
@@ -1415,7 +1441,7 @@ function doParseSource(){
 }
 function renderSourceReview(){
   var d=wiz.data;
-  var dup = wiz.dedup ? '<div class="dedupbox">\u26a0\ufe0f <b>Already tracked.</b> We\'re already polling \u201c'+esc(wiz.dedup.name)+'\u201d ('+esc(wiz.dedup.feedUrl)+'). Adding it again is blocked.</div>' : '';
+  var dup = wiz.dedup ? '<div class="dedupbox"><b>Already tracked.</b> We\'re already polling \u201c'+esc(wiz.dedup.name)+'\u201d ('+esc(wiz.dedup.feedUrl)+'). Adding it again is blocked.</div>' : '';
   var samples=(wiz.sample||[]).map(function(s){ var g=area(s.areaSlug); return '<li><span class="sdot" style="background:'+g.c+'"></span><span style="flex:1">'+esc(s.title)+'</span><span class="stype">'+esc(s.type)+'</span></li>'; }).join('');
   var poolNote = wiz.inPool ? '<p class="subnote">'+wiz.inPool+' of these are already in the pool \u2014 they\'ll dedup automatically.</p>' : '';
   var addBtn = wiz.dedup ? '' : '<button class="btn" id="w-add">Add source \u2192</button>';
@@ -1459,7 +1485,7 @@ function renderSourceSuccess(){
 function renderAgentSource(){
   setWiz('Add a source via a PR','One-file pull request',
     '<p class="subnote">Prefer a code-defined source? Paste this into your coding agent \u2014 it writes the source file and opens a pull request.</p>'+
-    '<div class="repochip">\ud83d\udce6 '+esc(repoShort())+'</div>'+
+    '<div class="repochip">'+esc(repoShort())+'</div>'+
     '<div class="promptbox"><button class="btn btn-sm copy" id="wiz-copy">Copy</button><pre id="wiz-prompt">'+esc(promptSource())+'</pre></div>',
     '<button class="btn-ghost" id="w-back">\u2190 Back</button><span class="muted" style="font-size:12px">Review the diff before approving.</span>');
   el('w-back').onclick=function(){ if(SUBMIT.enabled){ wiz.view=null; } else { wiz.path=null; } renderWiz(); };
