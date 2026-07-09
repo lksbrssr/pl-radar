@@ -13,6 +13,8 @@ import db from './db/index.js'
 import { coverageGaps } from './ranking/strength.js'
 import { ingestSources } from './ingest/ingest.js'
 import { activeEdition, editionLabel, config } from './config.js'
+import { kb } from './bot/keyboards.js'
+import { webVoteUrl } from './bot/links.js'
 
 let lastFiredDay = ''
 
@@ -85,8 +87,8 @@ function nudgeText(): string {
   const label = editionLabel(activeEdition())
   if (!isFinalWeekOfMonth()) {
     return (
-      `🔭 Your weekly PL R&D Radar match-ups are ready. ` +
-      `A quick /vote round shapes the ${label}.`
+      `Your weekly PL R&D Radar match-ups are ready. ` +
+      `A quick round shapes the ${label}.`
     )
   }
   try {
@@ -97,21 +99,23 @@ function nudgeText(): string {
       if (gap.underSampled > 0)
         bits.push(`${gap.underSampled} card${gap.underSampled === 1 ? '' : 's'} still need more eyes`)
       return (
-        `⏳ Last week for the ${label}! It isn’t locked yet — ${bits.join(' and ')}. ` +
-        `A quick /vote round now directly decides what ships.`
+        `Last week for the ${label} — it isn’t locked yet: ${bits.join(' and ')}. ` +
+        `A quick round now directly decides what ships.`
       )
     }
-    return `✅ Last week for the ${label} — it’s looking solid. Want to stress-test it? Tap /vote.`
+    return `Last week for the ${label} — it’s looking solid. Want to stress-test it?`
   } catch {
-    return `⏳ Last week for the ${label}! Tap /vote to help settle what ships.`
+    return `Last week for the ${label}. Vote to help settle what ships.`
   }
 }
 
 async function sendWeeklyNudges(bot: Bot): Promise<void> {
+  // Only real Telegram curators (positive ids) can receive a message; anonymous
+  // web voters have negative ids and are skipped.
   const curators = db
     .prepare(
       `SELECT id FROM curators
-       WHERE status = 'active' AND onboarded_at IS NOT NULL`,
+       WHERE status = 'active' AND onboarded_at IS NOT NULL AND id > 0`,
     )
     .all() as { id: number }[]
   const text = nudgeText()
@@ -119,7 +123,10 @@ async function sendWeeklyNudges(bot: Bot): Promise<void> {
 
   for (const c of curators) {
     try {
-      await bot.api.sendMessage(c.id, text)
+      await bot.api.sendMessage(c.id, text, {
+        parse_mode: 'HTML',
+        reply_markup: kb.nudge(webVoteUrl(c.id)),
+      })
     } catch (err) {
       // Curator may have blocked the bot — ignore and continue.
       console.warn(`[scheduler] could not nudge ${c.id}:`, String(err))

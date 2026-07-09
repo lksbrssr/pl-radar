@@ -583,7 +583,25 @@ function newToken(){ return (window.crypto&&crypto.randomUUID)?crypto.randomUUID
 var vs = null; // active voting session {a,b,champ,count,busy}
 
 // ---- Router ----
-function route(){ return (location.hash.replace('#','')||'radar'); }
+function route(){ return (location.hash.replace('#','').split('?')[0]||'radar'); }
+// Personal magic-link token (?t=…) the bot sends so browser votes count under
+// the curator's real Telegram identity.
+function magicToken(){
+  var h=location.hash.slice(1); var i=h.indexOf('?'); if(i<0) return '';
+  try{ return new URLSearchParams(h.slice(i+1)).get('t')||''; }catch(e){ return ''; }
+}
+function claimMagic(){
+  var t=magicToken(); if(!t) return Promise.resolve(false);
+  return fetch('/api/web/claim',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:t})})
+    .then(function(r){ return r.ok?r.json():null; }).then(function(j){
+      if(j&&j.ok){
+        web={token:t,id:j.id,role:j.role||'',focus:j.focus||[],linked:!!j.linked,name:j.name||''}; saveWeb();
+        try{ history.replaceState(null,'','#vote'); }catch(e){ location.hash='vote'; }
+        return true;
+      }
+      return false;
+    }).catch(function(){ return false; });
+}
 function setActive(){
   document.querySelectorAll('#nav button').forEach(function(b){
     b.classList.toggle('active', b.getAttribute('data-route')===route());
@@ -913,15 +931,23 @@ function paintSlot(slot, card, reigning, entering){
 }
 function delay(ms){ return new Promise(function(r){ setTimeout(r,ms); }); }
 function renderVoteSession(){
+  var linked = !!(web && web.linked);
+  var who = (linked && web.name)
+    ? '<p class="lead" style="margin-top:-8px">Voting as <b>'+esc(web.name)+'</b> — your picks count under your curator profile.</p>'
+    : '';
+  var foot = linked
+    ? ''
+    : '<div class="votefoot"><button id="vReset">Change interests</button>'+
+      '<a href="https://t.me/lksbrssr_radar_bot" target="_blank">Vote in Telegram instead</a></div>';
   el('view').innerHTML =
     '<h2 class="title">Vote</h2>'+
     '<p class="lead">Tap the stronger signal for the Radar. Your pick stays and faces a new challenger.</p>'+
+    who+
     '<div class="vprogress" id="vprog" style="display:none"><div id="vprogLabel"></div></div>'+
     '<div class="vsplit" id="vsplit"><div id="slotA"><div class="loading">Loading match-up…</div></div><div id="slotB"></div></div>'+
     '<div class="vseeall"><a class="btn-ghost" href="#cards">See all cards →</a></div>'+
-    '<div class="votefoot"><button id="vReset">Change interests</button>'+
-      '<a href="https://t.me/lksbrssr_radar_bot" target="_blank">Vote in Telegram instead</a></div>';
-  el('vReset').addEventListener('click', function(){ web=null; saveWeb(); localStorage.removeItem('radar-web'); renderVote(); });
+    foot;
+  var rb=el('vReset'); if(rb) rb.addEventListener('click', function(){ web=null; saveWeb(); localStorage.removeItem('radar-web'); renderVote(); });
   vs={a:null,b:null,champ:null,count:0,busy:false,lastTs:0};
   if(web&&web.token){ getJSON('/api/vote/me?token='+encodeURIComponent(web.token)).then(function(r){ updateStats(r.stats); }); }
   challenger('').then(function(a){ vs.a=a; return challenger(''+a.id); }).then(function(b){
@@ -1614,6 +1640,6 @@ Promise.all([getJSON('/api/editions.json'), getJSON('/api/overview.json')]).then
   state.editions = res[0].editions; state.edition = res[0].current || (state.editions[0]&&state.editions[0].edition);
   state.overview = res[1];
   if(!state.editions.some(function(e){return e.edition===state.edition;}) && state.editions[0]) state.edition=state.editions[0].edition;
-  render();
+  claimMagic().then(function(){ render(); });
 });
 `

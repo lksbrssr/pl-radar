@@ -2,6 +2,7 @@
  * Data-access layer. All SQL lives here so the bot/HTTP code reads cleanly and
  * a future maintainer has one place to understand persistence.
  */
+import { randomBytes } from 'node:crypto'
 import db from './index.js'
 import type { Card, Curator } from '../types.js'
 import { currentEdition, activeEdition } from '../config.js'
@@ -121,6 +122,20 @@ export function getCuratorByToken(token: string): Curator | undefined {
   return db
     .prepare('SELECT * FROM curators WHERE web_token = ?')
     .get(token) as Curator | undefined
+}
+
+/**
+ * A stable magic-link token for a (Telegram) curator, so a personal web link
+ * attributes browser votes to their real identity + segment. Generated once,
+ * then reused across every nudge/link. `web_token` is UNIQUE, so this never
+ * collides with an anonymous web voter's token.
+ */
+export function getOrCreateCuratorWebToken(curatorId: number): string {
+  const cur = getCurator(curatorId)
+  if (cur?.web_token) return cur.web_token
+  const token = 'tg-' + curatorId + '-' + randomBytes(12).toString('hex')
+  db.prepare('UPDATE curators SET web_token = ? WHERE id = ?').run(token, curatorId)
+  return token
 }
 
 /**
