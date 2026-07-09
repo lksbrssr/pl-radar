@@ -63,7 +63,7 @@ import { findDuplicate } from '../submit/dedup.js'
 import { requireAdmin, RIGHTS, ADMIN_COOKIE, adminForCurator, readCookie } from '../admin/auth.js'
 import { broadcastRound } from '../bot/broadcast.js'
 
-const REPO_URL = 'https://github.com/lksbrssr/plrd-radar-curator'
+const REPO_URL = 'https://github.com/lksbrssr/pl-radar'
 
 function formatDate(iso: string): string {
   const d = new Date(iso.replace(' ', 'T') + 'Z')

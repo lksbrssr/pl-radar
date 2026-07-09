@@ -1299,7 +1299,7 @@ function renderMethodology(){
     '<h2 class="title">Methodology</h2>'+
     '<p class="lead mlead">The Radar is decided by the <b>wisdom of the crowd</b>, not an editor. Here\'s how '+votes+' quick taps'+(curators?' from '+curators:'')+' become a monthly shortlist of the strongest signals — and why the ranking stays fair to every card, no matter when it entered the pool.</p>'+
     '<div class="mflow">'+
-      mStep(1,'Sources','Candidates are ingested from public PL R&amp;D sites, then de-duplicated so each real asset is one card.','sources')+
+      mStep(1,'Sources','Candidates are pulled from public PL R&amp;D feeds (plus any feed people add), de-duplicated, and filtered to on-mission items — so each real signal is one card.','sources')+
       '<span class="marrow">→</span>'+
       mStep(2,'Match-ups','Curators see two cards and tap the stronger one. The winner stays and faces a fresh challenger.','vote')+
       '<span class="marrow">→</span>'+
@@ -1308,7 +1308,7 @@ function renderMethodology(){
       mStep(4,'The cut','A strong, balanced top-5 becomes that month\'s Radar — once the crowd has actually decided.','cut')+
     '</div>'+
     '<p class="lead" style="margin-top:-6px">Tap any step to dig into how it works.</p>'+
-    '<div class="msec"><p class="muted" style="font-size:13px">Every vote is also decomposed into the independent pull of each angle, topic and format per segment (a conjoint-style part-worth model) — see the <a href="#data">Insights</a> view. Per-profile Radar “lenses” are coming soon. The raw votes are the single source of truth — every rating recomputes from scratch. It\'s all open source: <a href="https://github.com/lksbrssr/plrd-radar-curator" target="_blank" rel="noopener">read the code →</a></p></div>';
+    '<div class="msec"><p class="muted" style="font-size:13px">Every vote is also decomposed into the independent pull of each angle, topic and format per segment (a conjoint-style part-worth model) — see the <a href="#data">Insights</a> view. Per-profile Radar “lenses” are coming soon. The raw votes are the single source of truth — every rating recomputes from scratch. It\'s all open source: <a href="https://github.com/lksbrssr/pl-radar" target="_blank" rel="noopener">read the code →</a></p></div>';
   el('view').querySelectorAll('[data-meth]').forEach(function(b){ b.addEventListener('click', function(){
     openMeth(b.getAttribute('data-meth'));
   }); });
@@ -1317,11 +1317,13 @@ function renderMethodology(){
 // Deep-dive content for the methodology modals (keyed by tile).
 var METH = {
   sources: { title:'Sources &amp; de-duplication',
-    html:'<p>Candidate cards are ingested from public PL R&amp;D sources — <b>plrd.org/insights</b>, the <b>protocol.ai</b> blog and <b>PL Neuro</b> — every few hours. Each card is filed into the edition (month) it was published in. Anyone can add a source with a one-file PR (see the <a href="#sources">Sources</a> tab).</p>'+
+    html:'<p>Candidate cards come from a few built-in public PL R&amp;D feeds — <b>plrd.org/insights</b>, the <b>protocol.ai</b> blog and <b>PL&nbsp;Neuro</b> — plus any recurring feed people add in the app. Everything is re-checked every few hours (and right away when a source is added), and each card is filed into the edition (month) it was published in.</p>'+
+      '<p>Add a one-off card or a recurring source right from the <a href="#sources">Sources</a> tab: paste any URL, an AI drafts a card you review, and it lands after a duplicate check — no account or code needed. (A one-file code PR still works too.)</p>'+
       '<div class="mgrid">'+
         '<div class="mtile"><h4>Content vs. card</h4><p>The same talk is often cross-posted by two sites with different titles/URLs. We resolve each to a canonical <b>content</b> by a strong identifier (its YouTube id, else a normalized URL) so cross-posts collapse to <b>one</b> card — no split votes, no duplicates.</p></div>'+
+        '<div class="mtile"><h4>On-mission only</h4><p>External feeds publish plenty that isn\'t PL R&amp;D. An item matching none of the four focus areas (and carrying no Protocol Labs signal) is <b>dropped</b>, not filed under a vague catch-all.</p></div>'+
         '<div class="mtile"><h4>Self-healing</h4><p>Dedup runs on every ingest and merges duplicates that slipped in earlier — moving their votes onto the surviving card. Votes are never lost.</p></div>'+
-        '<div class="mtile"><h4>Public today</h4><p>All current sources are public, so their content may be shown externally. Internal / proprietary feeds are coming later.</p></div>'+
+        '<div class="mtile"><h4>Public &amp; curated</h4><p>All current sources are public, so their content may be shown externally; internal feeds come later. Admins can hide or remove a source or card at any time.</p></div>'+
       '</div>' },
   vote: { title:'The vote: king-of-the-hill',
     html:'<p>Pairwise choices are far more reliable than 1–5 star ratings: “is A stronger than B?” is easy and consistent, while absolute scores drift between people. Each winner stays on screen and meets a new challenger, so strong cards rack up comparisons fast.</p>'+
@@ -1369,9 +1371,9 @@ var AREAS_W = [
 ];
 var TYPES_W = ['Talk','Podcast','Publication','Blog','Signal'];
 var repoMeta = {
-  repoUrl:'https://github.com/lksbrssr/plrd-radar-curator',
-  guideUrl:'https://github.com/lksbrssr/plrd-radar-curator/blob/main/src/ingest/README.md',
-  sourcesDir:'https://github.com/lksbrssr/plrd-radar-curator/tree/main/src/ingest/sources'
+  repoUrl:'https://github.com/lksbrssr/pl-radar',
+  guideUrl:'https://github.com/lksbrssr/pl-radar/blob/main/src/ingest/README.md',
+  sourcesDir:'https://github.com/lksbrssr/pl-radar/tree/main/src/ingest/sources'
 };
 function wizSlug(s){ return String(s||'').toLowerCase().replace(/https?:\/\//,'').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,60); }
 function repoShort(){ return repoMeta.repoUrl.replace('https://github.com/',''); }
