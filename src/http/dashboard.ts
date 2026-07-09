@@ -518,6 +518,8 @@ export function renderDashboard(): string {
   html.dark .adminband .abadge{color:#f5c451;}
   .adminnote{border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin:10px 0;padding:9px 0;}
   .adminnote-t{font-size:12px;font-weight:600;color:var(--muted);letter-spacing:.02em;}
+  .authlink{cursor:pointer;text-decoration:underline;color:var(--blue);}
+  .authlink:hover{opacity:.85;}
   .admrow{opacity:.62;}
   .tilewrap{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(--white);}
   .tilewrap .tile{border:none;border-radius:0;background:transparent;}
@@ -540,7 +542,7 @@ export function renderDashboard(): string {
       <button data-route="data">Insights</button>
       <button data-route="method">Methodology</button>
     </nav>
-    <div class="adminnote" id="adminNote" style="display:none"><div class="adminnote-t">logged in as admin · <span id="adminLogout" style="cursor:pointer;text-decoration:underline">log out</span></div></div>
+    <div class="adminnote" id="authStatus" style="display:none"></div>
     <div class="side-foot">
       <button class="toggle" id="themeToggle">◐ Theme</button>
       <div class="tg">Vote in Telegram:<br><a href="https://t.me/lksbrssr_radar_bot" target="_blank">@lksbrssr_radar_bot</a></div>
@@ -591,6 +593,7 @@ export function renderDashboard(): string {
   <h3>Become a recognized curator</h3>
   <p class="authlede">Your votes already count toward the Radar, even anonymously — but they live only in <i>this</i> browser. Connect Telegram (under a minute, no password) to make it stick.</p>
   <ul class="authbenefits">
+    <li><b>No new account</b> — if you already have Telegram, you’re one tap away. No signup, no password.</li>
     <li><b>Keep your identity</b> — anonymous votes vanish if you clear this browser or switch device; connect once and you’re the same curator everywhere.</li>
     <li><b>Match-ups come to you</b> — a couple of pairs a day in chat, so you actually keep curating without remembering to visit.</li>
     <li><b>Be recognized</b> — show up as you, not an anonymous “Web voter,” in the curator stats.</li>
@@ -668,7 +671,7 @@ function claimMagic(){
   return fetch('/api/web/claim',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:t})})
     .then(function(r){ return r.ok?r.json():null; }).then(function(j){
       if(j&&j.ok){
-        web={token:t,id:j.id,role:j.role||'',focus:j.focus||[],linked:!!j.linked,name:j.name||''}; saveWeb();
+        web={token:t,id:j.id,role:j.role||'',focus:j.focus||[],linked:!!j.linked,name:j.name||''}; saveWeb(); renderAuthStatus();
         try{ history.replaceState(null,'','#vote'); }catch(e){ location.hash='vote'; }
         return true;
       }
@@ -1009,7 +1012,7 @@ function renderVoteOnboarding(){
     el('vStart').textContent='Starting…'; el('vStart').disabled=true;
     fetch('/api/web/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:token,role:role,focus:focus})})
       .then(function(r){return r.json();}).then(function(res){
-        web={token:token,id:res.id,role:role,focus:focus}; saveWeb(); renderVoteSession();
+        web={token:token,id:res.id,role:role,focus:focus}; saveWeb(); renderAuthStatus(); renderVoteSession();
       });
   });
 }
@@ -1893,23 +1896,43 @@ function render(){
 // Auth reuses the curator magic-link token (x-admin-token). See docs/admin-panel.md.
 var admin = { me:null };
 function can(right){ return !!(admin.me && (admin.me.root || (admin.me.rights||[]).indexOf(right)>=0)); }
-function adminBadge(){ var b=el('adminNote'); if(!b) return; if(admin.me){ b.style.display='block'; b.title='Admin: '+admin.me.name+(admin.me.root?' (root)':''); } }
+// Persistent auth-status line in the sidebar: admin / signed-in curator /
+// anonymous — with a one-tap way to connect for anonymous users.
+function renderAuthStatus(){
+  var b=el('authStatus'); if(!b) return;
+  var html, link=false;
+  if(admin.me){
+    html='logged in as admin · <span id="authAct" class="authlink">log out</span>'; link='logout';
+  } else if(web && web.linked){
+    html='signed in as '+esc(web.name||'you');
+  } else if(web && web.id){
+    html='voting anonymously · <span id="authAct" class="authlink">connect Telegram</span>'; link='connect';
+  } else {
+    html='not logged in · <span id="authAct" class="authlink">connect Telegram</span>'; link='connect';
+  }
+  b.innerHTML='<div class="adminnote-t">'+html+'</div>';
+  b.style.display='block';
+  var a=el('authAct');
+  if(a){ a.onclick = link==='logout' ? adminLogout : openAuthNudge; }
+}
+// Force-open the Telegram nudge (ignores the snooze; used by the connect link).
+function openAuthNudge(){ var m=el('authmodal'); if(m) m.classList.add('open'); }
 function initAdmin(){
   // Just ask the server — a valid httpOnly session cookie means admin mode.
   return adminReq('GET','/api/admin/me').then(function(r){
-    if(r.status===200 && r.body && r.body.ok){ admin.me=r.body; adminBadge(); return true; }
+    if(r.status===200 && r.body && r.body.ok){ admin.me=r.body; renderAuthStatus(); return true; }
     admin.me=null; return false;
   }).catch(function(){ return false; });
 }
 // Exchange a one-time link token for the httpOnly admin session cookie.
 function adminSignIn(token){
   return adminReq('POST','/api/admin/session',{token:token}).then(function(r){
-    if(r.status===200 && r.body && r.body.ok){ admin.me=r.body; adminBadge(); return true; }
+    if(r.status===200 && r.body && r.body.ok){ admin.me=r.body; renderAuthStatus(); return true; }
     admin.me=null; return false;
   }).catch(function(){ return false; });
 }
 function adminLogout(){
-  adminReq('POST','/api/admin/logout',{}).then(function(){ admin.me=null; var n=el('adminNote'); if(n) n.style.display='none'; adminToast('Logged out of admin.'); render(); });
+  adminReq('POST','/api/admin/logout',{}).then(function(){ admin.me=null; renderAuthStatus(); adminToast('Logged out of admin.'); render(); });
 }
 // Lightweight toast for admin action feedback (create-on-demand).
 function adminToast(msg, ok){
@@ -1931,7 +1954,7 @@ el('themeToggle').addEventListener('click', function(){
   var d = document.documentElement.classList.toggle('dark');
   try{ localStorage.setItem('radar-theme', d?'dark':'light'); }catch(e){}
 });
-var aLogout=el('adminLogout'); if(aLogout) aLogout.addEventListener('click', adminLogout);
+
 Promise.all([getJSON('/api/editions.json'), getJSON('/api/overview.json')]).then(function(res){
   state.editions = res[0].editions; state.edition = res[0].current || (state.editions[0]&&state.editions[0].edition);
   state.overview = res[1];
@@ -1941,6 +1964,7 @@ Promise.all([getJSON('/api/editions.json'), getJSON('/api/overview.json')]).then
   claimMagic().then(function(){ return loginTok ? adminSignIn(loginTok) : initAdmin(); }).then(function(){
     if(landedAdmin){ try{ history.replaceState(null,'','#cards'); }catch(e){ location.hash='cards'; } }
     render();
+    renderAuthStatus();
     setTimeout(maybeShowAuthNudge, 900);
   });
 });
