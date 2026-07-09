@@ -458,8 +458,9 @@ export function renderDashboard(): string {
   /* modal */
   .modal{position:fixed;inset:0;background:rgba(19,19,22,.55);display:none;align-items:center;justify-content:center;padding:20px;z-index:50;}
   .modal.open{display:flex;}
-  /* Center pop-out modals over the content area (excluding the sidebar) on desktop. */
-  @media(min-width:721px){.modal{left:236px;}}
+  /* The dark scrim covers the WHOLE page (incl. the sidebar); the sheet still
+     centers over the content area on desktop via left padding = sidebar width. */
+  @media(min-width:721px){.modal{padding-left:256px;}}
   .sheet{background:var(--white);border-radius:20px;max-width:560px;width:100%;overflow-y:auto;max-height:90vh;box-shadow:0 30px 80px rgba(0,0,0,.4);}
   .sheet-media{aspect-ratio:16/9;position:relative;}
   .sheet-media img,.sheet-media .ph{width:100%;height:100%;object-fit:cover;}
