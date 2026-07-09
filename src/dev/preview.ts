@@ -8,7 +8,28 @@
  * always shows a populated, clickable app.
  */
 import * as repo from '../db/repo.js'
+import db from '../db/index.js'
+import { config } from '../config.js'
 import { startServer } from '../http/server.js'
+
+/**
+ * Preview-only: mint a demo ROOT admin so the admin panel is testable without a
+ * Telegram bot (the preview has none). Runs ONLY when PREVIEW_ADMIN_TOKEN is set
+ * — production uses dist/index.js and never sets it, so there is no backdoor.
+ * The reviewer opens `/#admin?t=<PREVIEW_ADMIN_TOKEN>`.
+ */
+function seedPreviewAdmin() {
+  const token = process.env.PREVIEW_ADMIN_TOKEN
+  const rootId = config.adminIds[0]
+  if (!token || !rootId) return
+  db.prepare(
+    `INSERT INTO curators (id, first_name, status, onboarded_at, web_token)
+     VALUES (?, 'Preview Admin', 'active', datetime('now'), ?)
+     ON CONFLICT(id) DO UPDATE SET web_token = excluded.web_token,
+       onboarded_at = COALESCE(curators.onboarded_at, datetime('now'))`,
+  ).run(rootId, token)
+  console.log(`[preview] demo root admin ready — open /#admin?t=${token}`)
+}
 
 async function main() {
   if (repo.getActiveCards().length === 0 && repo.countCurators() === 0) {
@@ -16,6 +37,7 @@ async function main() {
     // simulate.ts seeds cards + curators + votes as import side effects.
     await import('./simulate.js')
   }
+  seedPreviewAdmin()
   startServer()
   console.log('[preview] HTTP-only preview is up')
 }

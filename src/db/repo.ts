@@ -853,3 +853,169 @@ export function voterStats(curatorId: number) {
   ).n
   return { votes, rank: higher + 1, of: countCurators(), topVotes }
 }
+
+// ---------------------------------------------------------------------------
+// Admin panel — admin flags, capabilities, and curatorial edits.
+// See docs/admin-panel.md and src/admin/auth.ts. Root admins (ADMIN_IDS env)
+// are NOT stored here; they're resolved in auth.ts and hold every right.
+// ---------------------------------------------------------------------------
+
+/** Grant (default) or revoke the base admin flag on a curator. */
+export function setCuratorAdmin(id: number, isAdmin: boolean): void {
+  db.prepare('UPDATE curators SET is_admin = ? WHERE id = ?').run(isAdmin ? 1 : 0, id)
+  if (!isAdmin) db.prepare('DELETE FROM curator_admin_rights WHERE curator_id = ?').run(id)
+}
+
+/** The rights explicitly granted to a curator (empty for non-admins/root). */
+export function listCuratorRights(id: number): string[] {
+  return (
+    db.prepare('SELECT right FROM curator_admin_rights WHERE curator_id = ?').all(id) as {
+      right: string
+    }[]
+  ).map((r) => r.right)
+}
+
+/** Replace a curator's granted rights with exactly `rights` (auto-marks admin). */
+export function setCuratorRights(id: number, rights: string[], grantedBy?: number): void {
+  const tx = db.transaction(() => {
+    db.prepare('UPDATE curators SET is_admin = 1 WHERE id = ?').run(id)
+    db.prepare('DELETE FROM curator_admin_rights WHERE curator_id = ?').run(id)
+    const ins = db.prepare(
+      'INSERT OR IGNORE INTO curator_admin_rights (curator_id, right, granted_by) VALUES (?, ?, ?)',
+    )
+    for (const r of rights) ins.run(id, r, grantedBy ?? null)
+  })
+  tx()
+}
+
+/** Curators + admin flags + granted rights + vote counts, for the admin view. */
+export function listCuratorsForAdmin() {
+  const rows = db
+    .prepare(
+      `SELECT c.id, c.username, c.first_name, c.role, c.status, c.is_admin,
+              (SELECT COUNT(*) FROM votes v WHERE v.curator_id = c.id) AS votes
+       FROM curators c WHERE c.id > 0
+       ORDER BY c.is_admin DESC, votes DESC, c.created_at ASC`,
+    )
+    .all() as {
+    id: number
+    username: string | null
+    first_name: string | null
+    role: string | null
+    status: string
+    is_admin: number
+    votes: number
+  }[]
+  return rows.map((r) => ({ ...r, rights: listCuratorRights(r.id), focus: getFocusAreas(r.id) }))
+}
+
+// --- Card edits / removal ---------------------------------------------------
+
+/** Patch a card's editable fields (only provided keys change). */
+export function updateCard(
+  id: number,
+  patch: {
+    title?: string
+    description?: string | null
+    area_slug?: string
+    area_label?: string
+    type?: string
+    source?: string | null
+    href?: string
+    image?: string | null
+    active?: boolean
+  },
+): Card | undefined {
+  const sets: string[] = []
+  const args: Record<string, unknown> = { id }
+  const set = (col: string, val: unknown) => {
+    sets.push(`${col} = @${col}`)
+    args[col] = val
+  }
+  if (patch.title !== undefined) set('title', patch.title)
+  if (patch.description !== undefined) set('description', patch.description)
+  if (patch.area_slug !== undefined) set('area_slug', patch.area_slug)
+  if (patch.area_label !== undefined) set('area_label', patch.area_label)
+  if (patch.type !== undefined) set('type', patch.type)
+  if (patch.source !== undefined) set('source', patch.source)
+  if (patch.href !== undefined) set('href', patch.href)
+  if (patch.image !== undefined) set('image', patch.image)
+  if (patch.active !== undefined) set('active', patch.active ? 1 : 0)
+  if (sets.length) db.prepare(`UPDATE cards SET ${sets.join(', ')} WHERE id = @id`).run(args)
+  return getCard(id)
+}
+
+/** Hard-delete a card (votes cascade via FK). Returns rows removed. */
+export function deleteCard(id: number): number {
+  db.prepare('DELETE FROM votes WHERE winner_card_id = ? OR loser_card_id = ?').run(id, id)
+  return db.prepare('DELETE FROM cards WHERE id = ?').run(id).changes
+}
+
+// --- Feed source edits / removal -------------------------------------------
+
+export function getFeedSource(key: string): FeedSource | undefined {
+  return db.prepare('SELECT * FROM feed_sources WHERE key = ?').get(key) as
+    | FeedSource
+    | undefined
+}
+
+export function updateFeedSource(
+  key: string,
+  patch: { name?: string; description?: string | null; area_slug?: string | null; active?: boolean },
+): FeedSource | undefined {
+  const sets: string[] = []
+  const args: Record<string, unknown> = { key }
+  const set = (col: string, val: unknown) => {
+    sets.push(`${col} = @${col}`)
+    args[col] = val
+  }
+  if (patch.name !== undefined) set('name', patch.name)
+  if (patch.description !== undefined) set('description', patch.description)
+  if (patch.area_slug !== undefined) set('area_slug', patch.area_slug)
+  if (patch.active !== undefined) set('active', patch.active ? 1 : 0)
+  if (sets.length)
+    db.prepare(`UPDATE feed_sources SET ${sets.join(', ')} WHERE key = @key`).run(args)
+  return getFeedSource(key)
+}
+
+/** Remove a feed source. When `withCards`, also delete the cards it produced
+ *  (keyed by `<sourceKey>-`). Returns what was removed. */
+export function deleteFeedSource(key: string, withCards = false): { source: number; cards: number } {
+  let cards = 0
+  const tx = db.transaction(() => {
+    if (withCards) {
+      const ids = db
+        .prepare('SELECT id FROM cards WHERE key LIKE ?')
+        .all(key + '-%') as { id: number }[]
+      for (const { id } of ids) cards += deleteCard(id)
+    }
+    const source = db.prepare('DELETE FROM feed_sources WHERE key = ?').run(key).changes
+    return source
+  })
+  const source = tx()
+  return { source, cards }
+}
+
+/** All cards in an edition (including inactive) for the admin cards view. */
+export function listEditionCardsAdmin(edition: string): Card[] {
+  return db
+    .prepare(`SELECT ${CARD_COLUMNS} FROM cards c WHERE c.edition = ? ORDER BY c.active DESC, c.rating DESC`)
+    .all(edition) as Card[]
+}
+
+// --- Source on/off state (admin can hide any source; delete only dynamic) ----
+
+/** Enable/disable any source by key (code-defined or dynamic). */
+export function setSourceActive(key: string, active: boolean): void {
+  db.prepare(
+    `INSERT INTO source_state (key, active, updated_at) VALUES (?, ?, datetime('now'))
+     ON CONFLICT(key) DO UPDATE SET active = excluded.active, updated_at = excluded.updated_at`,
+  ).run(key, active ? 1 : 0)
+}
+
+/** Keys explicitly disabled via source_state (active = 0). */
+export function disabledSourceKeys(): string[] {
+  return (
+    db.prepare('SELECT key FROM source_state WHERE active = 0').all() as { key: string }[]
+  ).map((r) => r.key)
+}

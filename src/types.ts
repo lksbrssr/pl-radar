@@ -80,6 +80,8 @@ export type Curator = {
   status: string
   /** Magic-link/browser-voter token; NULL for chat-only Telegram curators. */
   web_token: string | null
+  /** 1 when this curator has been granted admin access (see admin panel). */
+  is_admin?: number
   created_at: string
   onboarded_at: string | null
   last_active_at: string | null

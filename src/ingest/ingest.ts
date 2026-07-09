@@ -10,7 +10,7 @@
  */
 import { allSources } from './sources/index.js'
 import type { Candidate } from './types.js'
-import { upsertContent, upsertCardForContent, getActiveCards } from '../db/repo.js'
+import { upsertContent, upsertCardForContent, getActiveCards, disabledSourceKeys } from '../db/repo.js'
 import { contentIdentity } from './identity.js'
 import { sanitizeText, inferAreaOrNull } from './util.js'
 import { resolveCardImage } from './image.js'
@@ -60,7 +60,11 @@ export async function ingestSources(opts: IngestOptions = {}): Promise<IngestRes
   const allEditions = opts.editions === 'all'
   const allowed = new Set(allEditions ? [] : opts.editions ?? DEFAULT_EDITIONS)
 
-  const sources = allSources().filter((s) => !opts.sourceKey || s.key === opts.sourceKey)
+  // Admin-disabled sources (code or dynamic) are skipped entirely.
+  const disabled = new Set(disabledSourceKeys())
+  const sources = allSources().filter(
+    (s) => !disabled.has(s.key) && (!opts.sourceKey || s.key === opts.sourceKey),
+  )
   if (!sources.length) {
     throw new Error(opts.sourceKey ? `No source "${opts.sourceKey}".` : 'No sources registered.')
   }

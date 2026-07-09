@@ -1,0 +1,12 @@
+# Trust-boundary code: any change to admin auth, the admin API/UI surface, the
+# /admin command, or config/secrets plumbing REQUIRES the repo owner's review.
+# This is how we stop a PR from quietly widening who can administer the Radar
+# (identities live in the ADMIN_IDS secret + the DB, never in the repo — see
+# docs/admin-panel.md — but the guard code still deserves a hard review gate).
+
+/src/admin/                 @lksbrssr
+/src/bot/index.ts           @lksbrssr
+/src/bot/broadcast.ts       @lksbrssr
+/src/config.ts              @lksbrssr
+/src/db/schema.sql          @lksbrssr
+/.github/                   @lksbrssr

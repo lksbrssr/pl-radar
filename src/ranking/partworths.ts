@@ -37,7 +37,7 @@
 import db from '../db/index.js'
 import { ANGLES, FOCUS_AREAS, ROLES } from '../types.js'
 import { currentEdition } from '../config.js'
-import { votesForProfile, type Profile } from './segments.js'
+import { votesForProfile, votesForCurator, type Profile } from './segments.js'
 
 /** Below this many informing comparisons, an estimate is flagged low-confidence. */
 export const PARTWORTH_MIN_N = 30
@@ -325,6 +325,16 @@ export function partWorthsForProfile(
 
 export function globalPartWorths(feats?: Map<number, CardFeatures>): FitResult {
   return partWorthsForProfile({}, feats)
+}
+
+/** Part-worths fit on a SINGLE curator's votes (admin per-curator lens). Often
+ *  thin, so the same PARTWORTH_MIN_N gating applies and the UI shows a caveat. */
+export function partWorthsForCurator(
+  curatorId: number,
+  feats: Map<number, CardFeatures> = cardFeatureMap(),
+): FitResult {
+  const votes = votesForCurator(curatorId)
+  return fitPartWorths(groupsFor(votes, feats), feats, votes)
 }
 
 // ---------------------------------------------------------------------------

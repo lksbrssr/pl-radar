@@ -33,6 +33,7 @@ import {
   computeDeviations,
   consensusContested,
   supplyDemandGap,
+  partWorthsForCurator,
   PARTWORTH_MIN_N,
   type RoleFit,
 } from '../ranking/partworths.js'
@@ -51,7 +52,7 @@ import {
   submitEnabled,
   aiAvailable,
 } from '../config.js'
-import { allSources } from '../ingest/sources/index.js'
+import { allSources, SOURCES } from '../ingest/sources/index.js'
 import { ingestSources } from '../ingest/ingest.js'
 import { activeCardCountByKeyPrefix } from '../ingest/stats.js'
 import { parseCardDraft } from '../submit/parse.js'
@@ -59,6 +60,8 @@ import { parseSourceDraft, NoFeedError } from '../submit/parse.js'
 import { FetchFailedError } from '../submit/fetch.js'
 import { LlmUnavailableError } from '../submit/llm.js'
 import { findDuplicate } from '../submit/dedup.js'
+import { requireAdmin, RIGHTS } from '../admin/auth.js'
+import { broadcastRound } from '../bot/broadcast.js'
 
 const REPO_URL = 'https://github.com/lksbrssr/plrd-radar-curator'
 
@@ -243,6 +246,7 @@ export function createServer() {
       const card = getCard(r.id)!
       const w = wins.get(r.id) ?? 0
       return {
+        id: card.id,
         key: card.key,
         title: card.title,
         description: card.description ?? undefined,
@@ -375,14 +379,16 @@ export function createServer() {
       repoUrl: REPO_URL,
       sourcesDir: `${REPO_URL}/tree/main/src/ingest/sources`,
       guideUrl: `${REPO_URL}/blob/main/src/ingest/README.md`,
-      sources: allSources().map((s) => ({
-        key: s.key,
-        name: s.name,
-        description: s.description,
-        homepage: s.homepage ?? null,
-        external: !!s.external,
-        cards: s.keyPrefix ? activeCardCountByKeyPrefix(s.keyPrefix) : 0,
-      })),
+      sources: allSources()
+        .filter((s) => !new Set(repo.disabledSourceKeys()).has(s.key))
+        .map((s) => ({
+          key: s.key,
+          name: s.name,
+          description: s.description,
+          homepage: s.homepage ?? null,
+          external: !!s.external,
+          cards: s.keyPrefix ? activeCardCountByKeyPrefix(s.keyPrefix) : 0,
+        })),
     })
   })
 
@@ -591,6 +597,205 @@ export function createServer() {
     })
   })
 
+  // ----------------------------------------------------------------------
+  // Admin panel (see docs/admin-panel.md). Every route is gated by an admin
+  // magic-link token (x-admin-token header) + a per-route capability. The
+  // whole surface is a no-op unless at least one root admin (ADMIN_IDS) exists.
+  // ----------------------------------------------------------------------
+
+  // Whoami — used by the UI to decide whether to show the Admin tab + which
+  // sub-tabs. Returns 401 for non-admins (the UI just hides the tab then).
+  app.get('/api/admin/me', (req, res) => {
+    const ctx = requireAdmin(req, res)
+    if (!ctx) return
+    res.json({
+      ok: true,
+      curatorId: ctx.curatorId,
+      name: ctx.name,
+      root: ctx.root,
+      rights: ctx.root ? [...RIGHTS] : [...ctx.rights],
+      allRights: [...RIGHTS],
+    })
+  })
+
+  // --- Curators + admin management (manage_admins) ---
+  app.get('/api/admin/curators', (req, res) => {
+    if (!requireAdmin(req, res, 'manage_admins')) return
+    res.json({ ok: true, curators: repo.listCuratorsForAdmin(), rootIds: config.adminIds })
+  })
+
+  app.post('/api/admin/curators/:id/admin', (req, res) => {
+    if (!requireAdmin(req, res, 'manage_admins')) return
+    const id = Number(req.params.id)
+    if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: 'bad-id' })
+    if (config.adminIds.includes(id))
+      return res.status(409).json({ ok: false, error: 'root-admin-immutable' })
+    const b = req.body ?? {}
+    const makeAdmin = !!b.admin
+    if (!makeAdmin) {
+      repo.setCuratorAdmin(id, false)
+      return res.json({ ok: true, id, admin: false, rights: [] })
+    }
+    const rights = Array.isArray(b.rights)
+      ? b.rights.filter((r: string) => (RIGHTS as readonly string[]).includes(r))
+      : [...RIGHTS] // promote with all rights by default
+    repo.setCuratorRights(id, rights, res.locals.admin?.curatorId)
+    res.json({ ok: true, id, admin: true, rights })
+  })
+
+  // --- Sources (manage_sources) ---
+  // Lists EVERY source — code-defined and dynamic. Code sources can be hidden
+  // (not deleted); dynamic feeds can be hidden or deleted.
+  app.get('/api/admin/sources', (req, res) => {
+    if (!requireAdmin(req, res, 'manage_sources')) return
+    const disabled = new Set(repo.disabledSourceKeys())
+    const code = SOURCES.map((s) => ({
+      key: s.key,
+      name: s.name,
+      feedUrl: null as string | null,
+      dynamic: false,
+      active: !disabled.has(s.key),
+      cards: s.keyPrefix ? activeCardCountByKeyPrefix(s.keyPrefix) : 0,
+    }))
+    const dyn = repo.listFeedSources(false).map((s) => ({
+      key: s.key,
+      name: s.name,
+      feedUrl: s.feed_url,
+      dynamic: true,
+      active: !!s.active && !disabled.has(s.key),
+      cards: activeCardCountByKeyPrefix(s.key + '-'),
+    }))
+    res.json({ ok: true, sources: [...code, ...dyn] })
+  })
+
+  app.patch('/api/admin/sources/:key', (req, res) => {
+    if (!requireAdmin(req, res, 'manage_sources')) return
+    const b = req.body ?? {}
+    const key = req.params.key
+    const feed = repo.getFeedSource(key)
+    if (feed) {
+      const patch: Record<string, unknown> = {}
+      if (typeof b.name === 'string') patch.name = b.name.trim()
+      if (typeof b.description === 'string') patch.description = b.description
+      if (typeof b.active === 'boolean') patch.active = b.active
+      if (typeof b.areaSlug === 'string' || b.areaSlug === null)
+        patch.area_slug =
+          b.areaSlug && FOCUS_AREAS.some((a) => a.slug === b.areaSlug) ? b.areaSlug : null
+      repo.updateFeedSource(key, patch)
+    } else if (SOURCES.some((s) => s.key === key)) {
+      // Code-defined source: only the on/off switch applies (can't rename code).
+      if (typeof b.active === 'boolean') repo.setSourceActive(key, b.active)
+    } else {
+      return res.status(404).json({ ok: false, error: 'not-found' })
+    }
+    console.log(`[admin] source ${key} edited by ${res.locals.admin?.curatorId}`)
+    res.json({ ok: true })
+  })
+
+  app.delete('/api/admin/sources/:key', (req, res) => {
+    if (!requireAdmin(req, res, 'manage_sources')) return
+    const key = req.params.key
+    if (!repo.getFeedSource(key)) {
+      // Code-defined sources live in the repo — they can only be hidden.
+      if (SOURCES.some((s) => s.key === key))
+        return res.status(400).json({ ok: false, error: 'code-source-hide-only' })
+      return res.status(404).json({ ok: false, error: 'not-found' })
+    }
+    const withCards = req.query.withCards === '1' || req.query.withCards === 'true'
+    const r = repo.deleteFeedSource(key, withCards)
+    console.log(
+      `[admin] source ${key} removed by ${res.locals.admin?.curatorId} (cards: ${r.cards})`,
+    )
+    res.json({ ok: true, removedCards: r.cards })
+  })
+
+  // --- Cards (manage_cards) ---
+  app.get('/api/admin/cards', (req, res) => {
+    if (!requireAdmin(req, res, 'manage_cards')) return
+    const edition = (req.query.edition as string) || currentEdition()
+    const items = repo.listEditionCardsAdmin(edition).map((c) => ({
+      id: c.id,
+      key: c.key,
+      title: c.title,
+      description: c.description ?? undefined,
+      href: c.href,
+      source: c.source ?? undefined,
+      type: c.type,
+      areaSlug: c.area_slug,
+      areaLabel: c.area_label,
+      active: !!c.active,
+      votes: c.matches,
+    }))
+    res.json({ ok: true, edition, label: editionLabel(edition), items })
+  })
+
+  app.patch('/api/admin/cards/:id', (req, res) => {
+    if (!requireAdmin(req, res, 'manage_cards')) return
+    const id = Number(req.params.id)
+    const b = req.body ?? {}
+    const patch: Record<string, unknown> = {}
+    if (typeof b.title === 'string') patch.title = b.title.trim()
+    if (typeof b.description === 'string') patch.description = b.description
+    if (typeof b.type === 'string') patch.type = b.type
+    if (typeof b.source === 'string') patch.source = b.source.trim() || null
+    if (typeof b.href === 'string' && b.href.trim()) patch.href = b.href.trim()
+    if (b.image === null || typeof b.image === 'string') patch.image = b.image || null
+    if (typeof b.active === 'boolean') patch.active = b.active
+    if (typeof b.areaSlug === 'string') {
+      const area = FOCUS_AREAS.find((a) => a.slug === b.areaSlug)
+      if (area) {
+        patch.area_slug = area.slug
+        patch.area_label = area.label
+      }
+    }
+    const updated = repo.updateCard(id, patch)
+    if (!updated) return res.status(404).json({ ok: false, error: 'not-found' })
+    console.log(`[admin] card ${id} edited by ${res.locals.admin?.curatorId}`)
+    res.json({ ok: true })
+  })
+
+  app.delete('/api/admin/cards/:id', (req, res) => {
+    if (!requireAdmin(req, res, 'manage_cards')) return
+    const removed = repo.deleteCard(Number(req.params.id))
+    if (!removed) return res.status(404).json({ ok: false, error: 'not-found' })
+    console.log(`[admin] card ${req.params.id} removed by ${res.locals.admin?.curatorId}`)
+    res.json({ ok: true })
+  })
+
+  // --- Per-curator Insights lens (manage_admins) ---
+  // Part-worths fit on ONE curator's votes, same shape as a role fit so the
+  // Insights view can reuse its part-worth panels. Individual-level, so it's
+  // admin-only (aggregate segment cuts stay public).
+  app.get('/api/admin/curator-fit', (req, res) => {
+    if (!requireAdmin(req, res, 'manage_admins')) return
+    const id = Number(req.query.id)
+    if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: 'bad-id' })
+    const feats = cardFeatureMap()
+    const baseline = globalPartWorths(feats)
+    const fit = partWorthsForCurator(id, feats)
+    const cur = repo.getCurator(id)
+    res.json({
+      ok: true,
+      curator: cur ? { id, name: cur.first_name || cur.username || `#${id}`, role: cur.role } : { id, name: `#${id}` },
+      nVotes: fit.nVotes,
+      byGroup: fit.byGroup,
+      deviations: computeDeviations(fit, baseline),
+      threshold: PARTWORTH_MIN_N,
+    })
+  })
+
+  // --- Trigger a toss-up round (trigger_rounds) ---
+  app.post('/api/admin/round/trigger', async (req, res) => {
+    if (!requireAdmin(req, res, 'trigger_rounds')) return
+    try {
+      const r = await broadcastRound()
+      console.log(`[admin] round broadcast by ${res.locals.admin?.curatorId}: ${JSON.stringify(r)}`)
+      res.json({ ok: true, ...r })
+    } catch (err) {
+      res.status(400).json({ ok: false, error: String((err as Error)?.message || err) })
+    }
+  })
+
   // Everything the Data view needs, in one call. Preference is decomposed with
   // the pairwise part-worth estimator (see ranking/partworths.ts), not marginal
   // win-rates. We compute each fit once and reuse it across the four views.
@@ -638,7 +843,8 @@ export function createServer() {
       consensus: consensusContested(roleFits, feats),
       // View 4 — supply/demand gap (a sourcing instruction for ingestion).
       supplyDemand: supplyDemandGap(baseline, feats),
-      curatorList: repo.listCuratorsWithStats(),
+      // NB: the curator list (names/profiles) is intentionally NOT here — it's
+      // admin-only now, served by /api/admin/curators.
     })
   })
 

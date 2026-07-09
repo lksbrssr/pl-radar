@@ -36,6 +36,9 @@ function columnExists(table: string, column: string): boolean {
 if (!columnExists('cards', 'edition')) {
   db.exec('ALTER TABLE cards ADD COLUMN edition TEXT')
 }
+if (!columnExists('curators', 'is_admin')) {
+  db.exec('ALTER TABLE curators ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0')
+}
 if (!columnExists('curators', 'web_token')) {
   db.exec('ALTER TABLE curators ADD COLUMN web_token TEXT')
   db.exec(

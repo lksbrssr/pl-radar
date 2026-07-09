@@ -474,6 +474,43 @@ export function renderDashboard(): string {
   .btn:hover{text-decoration:none;opacity:.9;}
   .close{position:absolute;top:12px;right:14px;background:rgba(0,0,0,.4);color:#fff;border:none;width:34px;height:34px;border-radius:50%;font-size:18px;cursor:pointer;}
   .loading{color:var(--muted);padding:40px 0;text-align:center;}
+  .atable{width:100%;border-collapse:collapse;font-size:13px;}
+  .atable th{text-align:left;color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.04em;padding:6px 10px;border-bottom:1px solid var(--line);}
+  .atable td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top;}
+  .atable tr:last-child td{border-bottom:none;}
+  .btn.btn-sm[disabled]{opacity:.5;cursor:default;}
+  /* Admin tab pills — own class (never mix .btn + .btn-ghost; their color/bg
+     conflict flips to white-on-white on hover). Legible in both themes. */
+  .atabs{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 10px;}
+  .atab{background:transparent;color:var(--ink);border:1px solid var(--line);border-radius:999px;
+    padding:8px 16px;font-size:13px;font-weight:500;cursor:pointer;transition:background .12s,border-color .12s;}
+  .atab:hover{background:var(--gray-50);border-color:var(--muted);color:var(--ink);}
+  .atab.on{background:var(--ink);color:var(--white);border-color:var(--ink);}
+  /* Admin: badge, toast, and overlay controls on Cards/Sources */
+  .adminbadge{align-items:center;gap:4px;font-size:9.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+    color:#a5813a;background:#fbf3dd;border:1px solid #ecd9a8;border-radius:999px;padding:2px 7px;margin-left:auto;}
+  html.dark .adminbadge{color:#f5c451;background:#3a2f12;border-color:#5c4a1a;}
+  .admtoast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);opacity:0;pointer-events:none;
+    background:var(--ink);color:var(--white);padding:10px 18px;border-radius:999px;font-size:13px;font-weight:500;
+    box-shadow:0 8px 24px rgba(0,0,0,.22);transition:opacity .18s,transform .18s;z-index:200;max-width:80vw;text-align:center;}
+  .admtoast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+  .admtoast.err{background:var(--neg);}
+  .cardadmin{display:flex;gap:6px;padding:0 14px 14px;flex-wrap:wrap;}
+  .abtn{font-size:12px;font-weight:600;padding:5px 11px;border-radius:8px;border:1px solid var(--line);
+    background:var(--gray-50);color:var(--ink);cursor:pointer;user-select:none;}
+  .abtn:hover{border-color:var(--muted);}
+  .abtn.danger{color:var(--neg);}
+  .abtn.danger:hover{background:rgba(214,69,69,.10);border-color:var(--neg);}
+  .adminband{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--gray-50);
+    border:1px dashed var(--line);border-radius:12px;padding:10px 14px;margin:2px 0 16px;font-size:13px;}
+  .adminband .abadge{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#a5813a;}
+  html.dark .adminband .abadge{color:#f5c451;}
+  .adminnote{border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin:10px 0;padding:9px 0;}
+  .adminnote-t{font-size:12px;font-weight:600;color:var(--muted);letter-spacing:.02em;}
+  .admrow{opacity:.62;}
+  .tilewrap{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(--white);}
+  .tilewrap .tile{border:none;border-radius:0;background:transparent;}
+  .tilewrap .cardadmin{border-top:1px solid var(--line);padding-top:10px;}
 </style></head>
 <body>
 <div class="app">
@@ -492,6 +529,7 @@ export function renderDashboard(): string {
       <button data-route="data">Insights</button>
       <button data-route="method">Methodology</button>
     </nav>
+    <div class="adminnote" id="adminNote" style="display:none"><div class="adminnote-t">logged in as admin</div></div>
     <div class="side-foot">
       <button class="toggle" id="themeToggle">◐ Theme</button>
       <div class="tg">Vote in Telegram:<br><a href="https://t.me/lksbrssr_radar_bot" target="_blank">@lksbrssr_radar_bot</a></div>
@@ -573,7 +611,7 @@ function areaIcon(slug, px){
     ';-webkit-mask:url('+u+') center/contain no-repeat;mask:url('+u+') center/contain no-repeat"></span>';
 }
 
-var state = { editions:[], edition:null, role:'', focus:[], dataSeg:'', overview:null, radar:null, radarCut:null, cards:{}, cardSearch:'' };
+var state = { editions:[], edition:null, role:'', focus:[], dataSeg:'', overview:null, radar:null, radarCut:null, cards:{}, cardSearch:'', showHidden:false, hiddenData:null, curSeg:'' };
 try{ var saved=JSON.parse(localStorage.getItem('radar-lens')||'{}'); if(saved){ state.role=saved.role||''; state.focus=saved.focus||[]; } }catch(e){}
 function saveLens(){ try{ localStorage.setItem('radar-lens', JSON.stringify({role:state.role,focus:state.focus})); }catch(e){} }
 function lensActive(){ return !!(state.role || (state.focus&&state.focus.length)); }
@@ -591,8 +629,16 @@ function magicToken(){
   var h=location.hash.slice(1); var i=h.indexOf('?'); if(i<0) return '';
   try{ return new URLSearchParams(h.slice(i+1)).get('t')||''; }catch(e){ return ''; }
 }
+// Admin magic-link token (same web_token, sent as x-admin-token). Captured from
+// a #admin?t=… deep link the bot mints, then persisted for later visits.
+var adminTok=null; try{ adminTok=localStorage.getItem('radar-admin')||null; }catch(e){}
+function adminHeaders(){ var h={'Content-Type':'application/json'}; if(adminTok) h['x-admin-token']=adminTok; return h; }
+function adminReq(method,path,body){
+  return fetch(path,{method:method,headers:adminHeaders(),body:body?JSON.stringify(body):undefined})
+    .then(function(r){ return r.json().then(function(j){return {status:r.status,body:j};},function(){return {status:r.status,body:{}};}); });
+}
 function claimMagic(){
-  var t=magicToken(); if(!t) return Promise.resolve(false);
+  var t=magicToken(); if(!t || route()==='admin') return Promise.resolve(false);
   return fetch('/api/web/claim',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:t})})
     .then(function(r){ return r.ok?r.json():null; }).then(function(j){
       if(j&&j.ok){
@@ -836,15 +882,6 @@ function renderData(){
       '<table><thead><tr><th>Attribute</th><th>Value</th><th>Demand</th><th>Supply</th><th>Signal</th></tr></thead><tbody>'+body+'</tbody></table>';
   }
 
-  // ---- curators table (unchanged) ----
-  var curatorRows = ov.curatorList.map(function(c){
-    var focus = (c.focus&&c.focus.length) ? c.focus.map(function(s){ return '<span class="chip"><i style="background:'+aColor(s)+'"></i>'+esc(aLabel(s))+'</span>'; }).join('') : '<span class="muted">all</span>';
-    var paused = c.status==='paused'?'<span class="pill">paused</span>':'';
-    return '<tr><td>'+esc(c.first_name||'Curator')+' '+(c.username?'<span class="muted">@'+esc(c.username)+'</span>':'')+' '+paused+'</td>'+
-      '<td class="muted">'+(c.role?esc(labelForRole(ov,c.role)):'—')+'</td><td>'+focus+'</td>'+
-      '<td><b>'+c.votes+'</b></td></tr>';
-  }).join('');
-
   v.innerHTML =
     '<h2 class="title">Curation data</h2>'+
     '<p class="lead">Every pairwise vote decomposed into the independent pull of each <b>angle</b>, <b>topic</b> and <b>format</b> — controlling for the others, per segment.</p>'+
@@ -860,15 +897,68 @@ function renderData(){
     devHtml+
     consensusHtml+
     sdHtml+
-    '<h2 class="title" style="font-size:22px">Curators ('+ov.curators+')</h2>'+
-    (curatorRows?'<table><thead><tr><th>Curator</th><th>Role</th><th>Focus areas</th><th>Votes</th></tr></thead><tbody>'+curatorRows+'</tbody></table>':'<div class="panel"><p class="muted">No curators yet.</p></div>');
+    (can('manage_admins')
+      ? '<h2 class="title" style="font-size:22px">Curators 🔐 <span class="tag tag-pub" style="vertical-align:middle">admin</span></h2>'+
+        '<p class="lead">Admin-only. Each curator’s self-selected profile (read-only), plus promote/revoke. Pick one for an individual preference lens.</p>'+
+        '<div id="adminCurators"><div class="loading">Loading curators…</div></div>'
+      : '');
 
   var ss=el('selSeg'); if(ss) ss.addEventListener('change', function(e){ state.dataSeg=e.target.value; renderData(); });
+  if(can('manage_admins')) loadAdminCurators();
+}
+
+// Admin-only curator roster + individual-preference lens (Insights overlay).
+function loadAdminCurators(){
+  var m=el('adminCurators'); if(!m) return; var ov=state.overview;
+  adminReq('GET','/api/admin/curators').then(function(r){
+    var cs=(r.body&&r.body.curators)||[], roots=(r.body&&r.body.rootIds)||[];
+    var curOpts='<option value="">— pick a curator —</option>'+cs.map(function(c){ return '<option value="'+c.id+'"'+(String(c.id)===String(state.curSeg)?' selected':'')+'>'+esc(c.first_name||c.username||('#'+c.id))+'</option>'; }).join('');
+    var rows=cs.map(function(c){
+      var isRoot=roots.indexOf(c.id)>=0;
+      var focus=(c.focus&&c.focus.length)?c.focus.map(function(s){return '<span class="chip"><i style="background:'+area(s).c+'"></i>'+esc(areaName(s))+'</span>';}).join(''):'<span class="muted">all</span>';
+      var toggle=isRoot?'<span class="muted">root</span>':'<span class="abtn" data-adm="'+c.id+'" data-on="'+(c.is_admin?0:1)+'">'+(c.is_admin?'Revoke admin':'Make admin')+'</span>';
+      return '<tr><td>'+esc(c.first_name||'Curator')+(c.username?' <span class="muted">@'+esc(c.username)+'</span>':'')+(isRoot?' ⭐':'')+(c.is_admin&&!isRoot?' <span class="pill">admin</span>':'')+'</td>'+
+        '<td class="muted">'+(c.role?esc(labelForRole(ov,c.role)):'—')+'</td><td>'+focus+'</td><td><b>'+c.votes+'</b></td><td>'+toggle+'</td></tr>';
+    }).join('');
+    m.innerHTML='<div class="controls"><div class="field"><label>Individual preference lens</label><select id="selCur">'+curOpts+'</select></div></div>'+
+      '<div id="curFitMount"></div>'+
+      '<table><thead><tr><th>Curator</th><th>Role</th><th>Focus areas</th><th>Votes</th><th>Admin</th></tr></thead><tbody>'+rows+'</tbody></table>';
+    var sc=el('selCur'); if(sc) sc.addEventListener('change', function(e){ state.curSeg=e.target.value; loadCuratorFit(); });
+    m.querySelectorAll('[data-adm]').forEach(function(b){ b.addEventListener('click', function(){
+      var id=b.getAttribute('data-adm'), on=b.getAttribute('data-on')==='1';
+      adminReq('POST','/api/admin/curators/'+id+'/admin',{admin:on}).then(function(x){ if(x.body&&x.body.ok){ adminToast(on?'Promoted to admin.':'Admin revoked.'); loadAdminCurators(); } else adminToast('Failed: '+((x.body&&x.body.error)||x.status),false); }); }); });
+    if(state.curSeg) loadCuratorFit();
+  });
+}
+function loadCuratorFit(){
+  var mount=el('curFitMount'); if(!mount) return;
+  if(!state.curSeg){ mount.innerHTML=''; return; }
+  mount.innerHTML='<div class="loading">Fitting this curator’s preferences…</div>';
+  adminReq('GET','/api/admin/curator-fit?id='+encodeURIComponent(state.curSeg)).then(function(r){
+    var b=r.body; if(!(b&&b.ok)){ mount.innerHTML='<div class="panel"><p class="muted">Could not load that curator.</p></div>'; return; }
+    var groups=state.overview.partWorths.groups;
+    var panels=groups.map(function(g){ return pwPanel(g.key,g.label,(b.byGroup&&b.byGroup[g.key])||[]); }).join('');
+    mount.innerHTML='<div class="panel" style="margin-bottom:14px"><b>'+esc(b.curator.name)+'</b> · '+b.nVotes+' vote'+(b.nVotes===1?'':'s')+'. Individual part-worths — thin data, so values below '+b.threshold+' comparisons are grayed and shouldn’t be over-read.</div>'+
+      '<div class="grid">'+panels+'</div>';
+  });
 }
 
 // ---- Vote view (in-browser king-of-the-hill) ----
 function renderVote(){
   if(web && web.id){ renderVoteSession(); } else { renderVoteOnboarding(); }
+  // Admin overlay: a one-tap “trigger a toss-up round” broadcast to curators.
+  if(can('trigger_rounds')){
+    var v=el('view'); if(!v) return;
+    var band=document.createElement('div'); band.className='adminband';
+    band.innerHTML='<span class="abadge">ADMIN</span><span>Prompt every active curator to vote now (independent of the weekly nudge).</span><button class="abtn" id="aRound" style="margin-left:auto">Trigger a vote</button>';
+    v.insertBefore(band, v.firstChild);
+    el('aRound').addEventListener('click', function(){
+      var b=el('aRound'); b.disabled=true; var o=b.textContent; b.textContent='Sending\u2026';
+      adminReq('POST','/api/admin/round/trigger',{}).then(function(x){ b.disabled=false; b.textContent=o;
+        if(x.body&&x.body.ok) adminToast('Vote triggered — sent to '+x.body.sent+' curator(s)'+(x.body.failed?(' ('+x.body.failed+' failed)'):'')+'.');
+        else adminToast('Failed: '+((x.body&&x.body.error)||x.status),false); });
+    });
+  }
 }
 
 function renderVoteOnboarding(){
@@ -1011,8 +1101,10 @@ function renderSources(){
         '<div class="lockover"><span class="lk">🔒</span><span>Internal Radar — coming soon</span></div></div>';
     }).join('');
     el('view').innerHTML =
+      (can('manage_sources')?'<div class="adminband"><span class="abadge">ADMIN</span><span>Hide any source, or delete user-added ones. Manage them just below.</span></div>':'')+
       '<h2 class="title">Sources</h2>'+
       '<p class="lead">Where candidate cards come from. Community contributions are welcome — <a href="'+esc(d.sourcesDir)+'" target="_blank" rel="noopener">browse them on GitHub</a>.</p>'+
+      (can('manage_sources')?'<div id="srcAdminMount"></div>':'')+
       '<div class="srchead"><h3>Public sources</h3><span class="tag tag-pub">public</span></div>'+
       '<p class="lead" style="margin-top:-6px">Any content pulled from these sources may be surfaced to an external audience on the Radar.</p>'+
       '<div class="srcgrid">'+cards+'</div>'+
@@ -1025,6 +1117,30 @@ function renderSources(){
     // NB: pass no args — assigning openWiz directly would hand it the click Event
     // as its path, skipping the choice.
     var ob=el('opensrc'); if(ob) ob.onclick=function(){ openWiz(); };
+    if(can('manage_sources')) renderSourcesAdmin();
+  });
+}
+function renderSourcesAdmin(){
+  var m=el('srcAdminMount'); if(!m) return;
+  adminReq('GET','/api/admin/sources').then(function(r){
+    var ss=(r.body&&r.body.sources)||[];
+    m.innerHTML='<div class="panel" style="margin-bottom:18px"><h3>Manage sources</h3>'+
+      '<p class="muted" style="font-size:12px;margin:-4px 0 12px">Hidden sources stop ingesting and drop off the public list. Built-in sources can be hidden but not deleted; user-added feeds can be deleted (with their cards).</p>'+
+      '<table class="atable"><tr><th>Source</th><th>Kind</th><th>Cards</th><th>Status</th><th></th></tr>'+
+        ss.map(function(s){
+          var del = s.dynamic
+            ? '<span class="abtn danger" data-sdel="'+esc(s.key)+'" data-sn="'+esc(s.name)+'">Delete</span>'
+            : '';
+          return '<tr'+(s.active?'':' class="admrow"')+'><td><b>'+esc(s.name)+'</b>'+(s.feedUrl?'<br><span class="muted" style="font-size:11px">'+esc(s.feedUrl)+'</span>':'')+'</td>'+
+            '<td class="muted">'+(s.dynamic?'user-added':'built-in')+'</td>'+
+            '<td>'+s.cards+'</td><td>'+(s.active?'<span class="muted">active</span>':'<b>hidden</b>')+'</td>'+
+            '<td style="white-space:nowrap"><span class="abtn" data-stog="'+esc(s.key)+'" data-on="'+(s.active?0:1)+'">'+(s.active?'Hide':'Unhide')+'</span> '+del+'</td></tr>';
+        }).join('')+'</table></div>';
+    m.querySelectorAll('[data-stog]').forEach(function(b){ b.addEventListener('click',function(){
+      adminReq('PATCH','/api/admin/sources/'+encodeURIComponent(b.getAttribute('data-stog')),{active:b.getAttribute('data-on')==='1'}).then(function(x){ if(x.body&&x.body.ok){ adminToast(b.getAttribute('data-on')==='1'?'Source unhidden.':'Source hidden.'); renderSources(); } else adminToast('Failed.',false); }); }); });
+    m.querySelectorAll('[data-sdel]').forEach(function(b){ b.addEventListener('click',function(){
+      if(!confirm('Delete source “'+b.getAttribute('data-sn')+'” and its cards?')) return;
+      adminReq('DELETE','/api/admin/sources/'+encodeURIComponent(b.getAttribute('data-sdel'))+'?withCards=1').then(function(x){ if(x.body&&x.body.ok){ adminToast('Removed source (+'+(x.body.removedCards||0)+' cards).'); renderSources(); } else adminToast('Failed.',false); }); }); });
   });
 }
 
@@ -1034,6 +1150,8 @@ function renderCards(){
   var oldest = eds.length? eds[eds.length-1].edition : state.edition;
   var newest = eds.length? eds[0].edition : state.edition;
   v.innerHTML =
+    (can('manage_cards')?'<div class="adminband"><span class="abadge">ADMIN</span><span>You can edit, hide or delete cards inline.</span>'+
+      '<button class="abtn" id="cHiddenToggle" style="margin-left:auto">'+(state.showHidden?'Hide hidden':'Show hidden')+'</button></div>':'')+
     '<h2 class="title">Cards</h2>'+
     '<p class="lead" id="cardsLead">Every candidate competing for this edition\'s Radar.</p>'+
     '<div class="controls cardctrls"><div class="field"><label>Month</label>'+
@@ -1044,23 +1162,74 @@ function renderCards(){
         '<button class="btn" id="cAdd" style="cursor:pointer;border:none;white-space:nowrap">Add a card</button></div>'+
     '</div>'+
     '<div id="cardsMount"><div class="loading">Loading cards…</div></div>';
-  el('cMonth').addEventListener('change', function(e){ if(e.target.value){ state.edition=e.target.value; state.cardsData=null; loadCards(); } });
+  el('cMonth').addEventListener('change', function(e){ if(e.target.value){ state.edition=e.target.value; state.cardsData=null; state.hiddenData=null; loadCards(); } });
   el('cSearch').addEventListener('input', function(e){ state.cardSearch=e.target.value; renderCardsGrid(); });
   el('cAdd').addEventListener('click', function(){ openWiz(); });
+  var ht=el('cHiddenToggle'); if(ht) ht.addEventListener('click', function(){ state.showHidden=!state.showHidden; renderCards(); });
   if(state.cardsData && state.cardsData.edition===state.edition) renderCardsGrid(); else loadCards();
 }
 function loadCards(){
-  getJSON('/api/cards.json?edition='+encodeURIComponent(state.edition)).then(function(d){ state.cardsData=d; renderCardsGrid(); });
+  var reqs=[getJSON('/api/cards.json?edition='+encodeURIComponent(state.edition))];
+  // Admins optionally pull inactive (hidden) cards too, so they can restore them.
+  if(can('manage_cards') && state.showHidden){ reqs.push(adminReq('GET','/api/admin/cards?edition='+encodeURIComponent(state.edition))); }
+  Promise.all(reqs).then(function(a){
+    state.cardsData=a[0];
+    state.hiddenData = (a[1] && a[1].body && a[1].body.ok) ? { items:(a[1].body.items||[]).filter(function(x){return !x.active;}) } : null;
+    renderCardsGrid();
+  });
 }
 function cardTile(it){
   var media = it.image ? '<img src="'+esc(it.image)+'" loading="lazy" alt="" onerror="this.style.display=\'none\'">' : '<div class="ph"></div>';
   var meta = '<span>'+it.votes+' vote'+(it.votes===1?'':'s')+'</span>'+(it.winrate!=null?'<span>'+it.winrate+'% win</span>':'');
-  return '<button class="tile" data-key="'+esc(it.key)+'">'+
+  var tile='<button class="tile" data-key="'+esc(it.key)+'">'+
     '<div class="tile-media">'+media+
       '<span class="rankbadge'+(it.inCut?' cut':'')+'">#'+it.rank+'</span>'+
       '<span class="tile-area" style="background:rgba(19,19,22,.62)">'+esc(it.areaLabel)+'</span></div>'+
     '<div class="tile-body"><span class="kicker">'+esc(it.type)+(it.source?' · '+esc(it.source):'')+'</span>'+
       '<h4>'+esc(it.title)+'</h4><div class="tile-meta">'+meta+'</div></div></button>';
+  if(!can('manage_cards') || it.id==null) return tile;
+  return '<div class="tilewrap">'+tile+'<div class="cardadmin">'+
+    '<span class="abtn" data-cedit="'+it.id+'">Edit</span>'+
+    '<span class="abtn" data-chide="'+it.id+'">Hide</span>'+
+    '<span class="abtn danger" data-cdel="'+it.id+'" data-ct="'+esc(it.title)+'">Delete</span>'+
+    '</div></div>';
+}
+// Wire the inline admin actions on card tiles + the hidden-cards section.
+function bindCardAdmin(mount){
+  if(!can('manage_cards')||!mount) return;
+  var byId=function(id){ var a=(state.cardsData&&state.cardsData.items)||[]; var b=(state.hiddenData&&state.hiddenData.items)||[]; return a.concat(b).filter(function(x){return String(x.id)===String(id);})[0]; };
+  mount.querySelectorAll('[data-cedit]').forEach(function(s){ s.addEventListener('click', function(e){ e.stopPropagation(); openEditCard(byId(s.getAttribute('data-cedit'))); }); });
+  mount.querySelectorAll('[data-chide]').forEach(function(s){ s.addEventListener('click', function(e){ e.stopPropagation();
+    adminReq('PATCH','/api/admin/cards/'+s.getAttribute('data-chide'),{active:false}).then(function(x){ if(x.body&&x.body.ok){ adminToast('Card hidden.'); reloadCards(); } else adminToast('Failed to hide.',false); }); }); });
+  mount.querySelectorAll('[data-crestore]').forEach(function(s){ s.addEventListener('click', function(e){ e.stopPropagation();
+    adminReq('PATCH','/api/admin/cards/'+s.getAttribute('data-crestore'),{active:true}).then(function(x){ if(x.body&&x.body.ok){ adminToast('Card restored.'); reloadCards(); } else adminToast('Failed.',false); }); }); });
+  mount.querySelectorAll('[data-cdel]').forEach(function(s){ s.addEventListener('click', function(e){ e.stopPropagation();
+    if(!confirm('Delete “'+s.getAttribute('data-ct')+'”? Its votes are removed too.')) return;
+    adminReq('DELETE','/api/admin/cards/'+s.getAttribute('data-cdel')).then(function(x){ if(x.body&&x.body.ok){ adminToast('Card deleted.'); reloadCards(); } else adminToast('Failed to delete.',false); }); }); });
+}
+function reloadCards(){ state.cardsData=null; state.hiddenData=null; loadCards(); }
+// Prefilled edit modal (reuses the add-card wizard modal chrome + fields).
+function openEditCard(it){
+  if(!it) return;
+  wiz={ path:'admin-edit', editId:it.id, view:null, dedup:null, sample:[], inPool:0, result:null, err:'', data:{
+    title:it.title||'', href:it.href||'', description:it.description||'', area:it.areaSlug||'ai-robotics',
+    type:it.type||'Signal', source:it.source||'', angle:'', image:it.image||null, rationale:'' } };
+  el('wizmodal').classList.add('open');
+  renderAdminEditCard();
+}
+function renderAdminEditCard(){
+  setWiz('Edit card','Changes save immediately',
+    cardFormFields()+errHtml(),
+    '<button class="btn-ghost" id="ae-cancel">Cancel</button><button class="btn" id="ae-save">Save changes</button>');
+  bindCardImagePreview();
+  el('ae-cancel').onclick=function(){ closeWiz(); };
+  el('ae-save').onclick=function(){
+    readCardForm(); var d=wiz.data;
+    if(!d.title){ wiz.err='A title is required.'; renderAdminEditCard(); return; }
+    var btn=el('ae-save'); btn.disabled=true; btn.textContent='Saving…';
+    adminReq('PATCH','/api/admin/cards/'+wiz.editId,{title:d.title,description:d.description,areaSlug:d.area,type:d.type,source:d.source,image:d.image,href:d.href})
+      .then(function(x){ if(x.body&&x.body.ok){ closeWiz(); adminToast('Card updated.'); reloadCards(); } else { wiz.err='Save failed ('+((x.body&&x.body.error)||x.status)+').'; renderAdminEditCard(); } });
+  };
 }
 function renderCardsGrid(){
   var d=state.cardsData, mount=el('cardsMount'); if(!mount) return;
@@ -1087,12 +1256,26 @@ function renderCardsGrid(){
   if(onRadar.length) html+='<div class="cardsec"><span class="kicker">On the '+esc(d.label)+'</span><div class="tiles">'+onRadar.map(cardTile).join('')+'</div></div>';
   if(onRadar.length && running.length) html+='<hr class="cardsecdiv">';
   if(running.length) html+='<div class="cardsec"><span class="kicker">In the running</span><div class="tiles">'+running.map(cardTile).join('')+'</div></div>';
+  if(can('manage_cards') && state.showHidden){
+    var hid=(state.hiddenData&&state.hiddenData.items)||[];
+    if(q) hid=hid.filter(function(x){return (x.title||'').toLowerCase().indexOf(q)>=0;});
+    html+='<hr class="cardsecdiv"><div class="cardsec"><span class="kicker">Hidden · admin only ('+hid.length+')</span>'+
+      (hid.length?'<div class="tiles">'+hid.map(function(it){
+        return '<div class="tilewrap admrow"><button class="tile" data-key="'+esc(it.key)+'"><div class="tile-body">'+
+          '<span class="kicker">'+esc(it.type)+(it.source?' · '+esc(it.source):'')+'</span><h4>'+esc(it.title)+'</h4>'+
+          '<div class="tile-meta"><span>'+esc(it.areaLabel)+'</span><span>'+it.votes+' votes</span></div></div></button>'+
+          '<div class="cardadmin"><span class="abtn" data-cedit="'+it.id+'">Edit</span>'+
+          '<span class="abtn" data-crestore="'+it.id+'">Restore</span>'+
+          '<span class="abtn danger" data-cdel="'+it.id+'" data-ct="'+esc(it.title)+'">Delete</span></div></div>';
+      }).join('')+'</div>':'<p class="muted">No hidden cards in '+esc(d.label)+'.</p>')+'</div>';
+  }
   mount.innerHTML=html;
-  mount.querySelectorAll('[data-key]').forEach(function(b){ b.addEventListener('click', function(){
+  mount.querySelectorAll('.tile[data-key]').forEach(function(b){ b.addEventListener('click', function(){
     var k=b.getAttribute('data-key');
-    var it=d.items.filter(function(x){return x.key===k;})[0]; if(!it) return;
+    var it=(d.items.concat((state.hiddenData&&state.hiddenData.items)||[])).filter(function(x){return x.key===k;})[0]; if(!it) return;
     openCard({areaSlug:it.areaSlug,type:it.type,source:it.source,title:it.title,description:it.description,image:it.image,href:it.href,_rating:it.rating,_votes:it.votes,_winrate:it.winrate});
   }); });
+  bindCardAdmin(mount);
 }
 
 // ---- Methodology view (how the ranking works) ----
@@ -1230,6 +1413,7 @@ function setWiz(h,sub,body,foot){
 function errHtml(){ return wiz.err?'<div class="errbox">'+esc(wiz.err)+'</div>':''; }
 
 function renderWiz(){
+  if(wiz.path==='admin-edit'){ renderAdminEditCard(); return; }
   if(!SUBMIT.checked){ setWiz('Add to the Radar','Loading\u2026','<div class="parsing"><span class="spin"></span>Getting things ready\u2026</div>',''); return; }
   if(SUBMIT.enabled && !submitKey){ renderUnlock(); return; }
   if(wiz.path===null){ renderWizChoice(); return; }
@@ -1655,6 +1839,38 @@ function render(){
   else if(r==='vote'){ renderVote(); }
   else if(r==='sources'){ renderSources(); }
   else if(r==='method'){ renderMethodology(); }
+  else if(r==='admin'){ // sign-in landing from the bot's /admin link → capture token, then go to Cards
+    var t=magicToken(); if(t && !admin.me){ adminTok=t; initAdmin().then(function(){ try{history.replaceState(null,'','#cards');}catch(e){} render(); }); }
+    else { try{history.replaceState(null,'','#cards');}catch(e){ location.hash='cards'; } render(); }
+  }
+}
+
+// ---- Admin (overlays on Cards / Sources / Insights / Vote — no standalone tab) ----
+// Auth reuses the curator magic-link token (x-admin-token). See docs/admin-panel.md.
+var admin = { me:null };
+function can(right){ return !!(admin.me && (admin.me.root || (admin.me.rights||[]).indexOf(right)>=0)); }
+function adminBadge(){ var b=el('adminNote'); if(!b) return; if(admin.me){ b.style.display='block'; b.title='Admin: '+admin.me.name+(admin.me.root?' (root)':''); } }
+function initAdmin(){
+  // The admin token is the same magic-link token used for web voting: prefer an
+  // explicit admin token, else the web identity's token, else one in the hash.
+  var t = adminTok || (web && web.token) || magicToken();
+  if(!t) return Promise.resolve(false);
+  adminTok = t;
+  return adminReq('GET','/api/admin/me').then(function(r){
+    if(r.status===200 && r.body && r.body.ok){
+      admin.me=r.body; try{ localStorage.setItem('radar-admin', t); }catch(e){}
+      adminBadge();
+      return true;
+    }
+    if(localStorage.getItem('radar-admin')){ try{ localStorage.removeItem('radar-admin'); }catch(e){} }
+    return false;
+  }).catch(function(){ return false; });
+}
+// Lightweight toast for admin action feedback (create-on-demand).
+function adminToast(msg, ok){
+  var t=el('adminToast'); if(!t){ t=document.createElement('div'); t.id='adminToast'; t.className='admtoast'; document.body.appendChild(t); }
+  t.textContent=msg; t.className='admtoast show'+(ok===false?' err':'');
+  clearTimeout(adminToast._t); adminToast._t=setTimeout(function(){ var x=el('adminToast'); if(x) x.className='admtoast'; }, 3200);
 }
 var sidebar = document.querySelector('.sidebar');
 var hamb = el('hamb');
@@ -1674,6 +1890,11 @@ Promise.all([getJSON('/api/editions.json'), getJSON('/api/overview.json')]).then
   state.editions = res[0].editions; state.edition = res[0].current || (state.editions[0]&&state.editions[0].edition);
   state.overview = res[1];
   if(!state.editions.some(function(e){return e.edition===state.edition;}) && state.editions[0]) state.edition=state.editions[0].edition;
-  claimMagic().then(function(){ render(); });
+  var landedAdmin = route()==='admin';
+  if(landedAdmin){ var at=magicToken(); if(at){ adminTok=at; try{ localStorage.setItem('radar-admin',at); }catch(e){} } }
+  claimMagic().then(function(){ return initAdmin(); }).then(function(){
+    if(landedAdmin){ try{ history.replaceState(null,'','#cards'); }catch(e){ location.hash='cards'; } }
+    render();
+  });
 });
 `
