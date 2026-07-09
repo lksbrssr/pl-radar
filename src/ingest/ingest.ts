@@ -13,6 +13,7 @@ import type { Candidate } from './types.js'
 import { upsertContent, upsertCardForContent, getActiveCards } from '../db/repo.js'
 import { contentIdentity } from './identity.js'
 import { sanitizeText } from './util.js'
+import { resolveCardImage } from './image.js'
 
 /** Editions ingested by default. June & July 2026 for the initial rollout. */
 export const DEFAULT_EDITIONS = ['2026-06', '2026-07']
@@ -24,6 +25,10 @@ export type IngestOptions = {
   sourceKey?: string
   /** Preview only — write nothing. */
   dry?: boolean
+  /** Validate each card's image and fall back to the page's hero when broken.
+   *  Defaults to true for a real ingest; always skipped on a --dry run (keeps
+   *  previews fast and offline-friendly). */
+  resolveImages?: boolean
   /** Line sink for human-readable progress (defaults to no-op). */
   log?: (line: string) => void
 }
@@ -48,6 +53,7 @@ function editionOf(c: Candidate): string | undefined {
 export async function ingestSources(opts: IngestOptions = {}): Promise<IngestResult> {
   const log = opts.log ?? (() => {})
   const dry = !!opts.dry
+  const resolveImages = (opts.resolveImages ?? true) && !dry
   const allEditions = opts.editions === 'all'
   const allowed = new Set(allEditions ? [] : opts.editions ?? DEFAULT_EDITIONS)
 
@@ -106,6 +112,15 @@ export async function ingestSources(opts: IngestOptions = {}): Promise<IngestRes
         }
         continue
       }
+      let image = c.image ?? null
+      if (resolveImages) {
+        const resolved = await resolveCardImage({ image: c.image, href: c.href })
+        if (resolved !== image) {
+          if (resolved) log(`      ↳ image ${image ? 'repaired' : 'found'}: ${resolved.slice(0, 64)}`)
+          else if (image) log(`      ↳ image dropped (broken): ${image.slice(0, 64)}`)
+        }
+        image = resolved
+      }
       const contentId = upsertContent({
         identityKey: identity.key,
         identityKind: identity.kind,
@@ -113,7 +128,7 @@ export async function ingestSources(opts: IngestOptions = {}): Promise<IngestRes
         title: sanitizeText(c.title, 200) || c.title,
         url: c.href,
         description: sanitizeText(c.description) || null,
-        image: c.image ?? null,
+        image,
         areaSlug: c.areaSlug,
         areaLabel: c.areaLabel,
         type: c.type,
