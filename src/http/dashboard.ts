@@ -84,6 +84,18 @@ export function renderDashboard(): string {
   .setsheet h3{font-family:Newsreader,serif;font-size:24px;margin:0 0 14px;}
   .setacct{margin-top:18px;padding-top:14px;border-top:1px solid var(--line);font-size:13px;}
   .setacct-h{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-bottom:6px;}
+  .setrow{display:flex;justify-content:flex-end;margin-top:18px;}
+  .pillbtn{display:inline-block;background:var(--ink);color:var(--white);border:none;border-radius:999px;
+    padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;}
+  .pillbtn:hover{opacity:.9;}
+  .pillbtn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line);}
+  .pillbtn.ghost:hover{background:var(--gray-50);border-color:var(--muted);opacity:1;}
+  .themebtn{position:fixed;top:16px;right:18px;width:40px;height:40px;border-radius:50%;
+    border:1px solid var(--line);background:var(--white);color:var(--ink);font-size:17px;line-height:1;
+    cursor:pointer;z-index:60;display:flex;align-items:center;justify-content:center;
+    box-shadow:0 2px 10px rgba(19,19,22,.08);transition:border-color .12s,transform .12s;}
+  .themebtn:hover{border-color:var(--muted);transform:translateY(-1px);}
+  @media(max-width:720px){ .themebtn{top:10px;right:12px;width:36px;height:36px;font-size:16px;} }
   .toggle{border:1px solid var(--line);background:var(--white);color:var(--ink);
     border-radius:999px;padding:8px 12px;font-size:12.5px;cursor:pointer;}
   .side-foot .tg{font-size:12px;color:var(--muted);}
@@ -537,6 +549,7 @@ export function renderDashboard(): string {
   .tilewrap .cardadmin{border-top:1px solid var(--line);padding-top:10px;}
 </style></head>
 <body>
+<button class="themebtn" id="themeToggle" aria-label="Toggle light / dark"></button>
 <div class="app">
   <aside class="sidebar">
     <div class="brand">
@@ -556,7 +569,6 @@ export function renderDashboard(): string {
     <div class="side-foot">
       <hr class="footdiv">
       <div class="authbox" id="authStatus"></div>
-      <button class="toggle" id="themeToggle">Theme</button>
       <div class="tg">Vote in Telegram:<br><a href="https://t.me/${bot}" target="_blank">@${bot}</a></div>
     </div>
   </aside>
@@ -1027,13 +1039,17 @@ function renderVoteOnboarding(){
     if(i>=0){ focus.splice(i,1); b.classList.remove('on'); } else { focus.push(s); b.classList.add('on'); }
   }); });
   el('vStart').addEventListener('click', function(){
-    var role=el('vRole').value; var token=newToken();
-    el('vStart').textContent='Starting…'; el('vStart').disabled=true;
-    fetch('/api/web/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:token,role:role,focus:focus})})
-      .then(function(r){return r.json();}).then(function(res){
-        web={token:token,id:res.id,role:role,focus:focus}; saveWeb(); renderAuthStatus(); renderVoteSession();
-      });
+    // Nudge to authenticate first; “keep voting anonymously” proceeds as a web voter.
+    var role=el('vRole').value, snap=focus.slice();
+    openAuthNudge(function(){ startAnonVoting(role, snap); });
   });
+}
+function startAnonVoting(role, focus){
+  var token=newToken();
+  fetch('/api/web/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:token,role:role,focus:focus})})
+    .then(function(r){return r.json();}).then(function(res){
+      web={token:token,id:res.id,role:role,focus:focus}; saveWeb(); renderAuthStatus(); renderVoteSession();
+    });
 }
 
 function challenger(excludeCsv){
@@ -1090,7 +1106,7 @@ function renderVoteSession(){
     : '';
   var foot = linked
     ? ''
-    : '<div class="votefoot"><button id="vReset">Change interests</button>'+
+    : '<div class="votefoot"><button id="vEditProfile">Edit curator profile</button>'+
       '<a href="'+TG+'" target="_blank">Vote in Telegram instead</a></div>';
   el('view').innerHTML =
     '<h2 class="title">Vote</h2>'+
@@ -1100,7 +1116,7 @@ function renderVoteSession(){
     '<div class="vsplit" id="vsplit"><div id="slotA"><div class="loading">Loading match-up…</div></div><div id="slotB"></div></div>'+
     '<div class="vseeall"><a class="btn-ghost" href="#cards">See all cards →</a></div>'+
     foot;
-  var rb=el('vReset'); if(rb) rb.addEventListener('click', function(){ web=null; saveWeb(); localStorage.removeItem('radar-web'); renderVote(); });
+  var rb=el('vEditProfile'); if(rb) rb.addEventListener('click', openSettings);
   vs={a:null,b:null,champ:null,count:0,busy:false,lastTs:0};
   if(web&&web.token){ getJSON('/api/vote/me?token='+encodeURIComponent(web.token)).then(function(r){ updateStats(r.stats); }); }
   challenger('').then(function(a){ vs.a=a; return challenger(''+a.id); }).then(function(b){
@@ -1885,10 +1901,10 @@ el('modal').addEventListener('click',function(e){ if(e.target===el('modal')) clo
 el('warnclose').onclick=closeWarn;
 el('warngot').onclick=closeWarn;
 el('warnmodal').addEventListener('click',function(e){ if(e.target===el('warnmodal')) closeWarn(); });
-el('authclose').onclick=function(){ closeAuthNudge(7); };
-el('authskip').onclick=function(){ closeAuthNudge(7); };
-el('authgo').onclick=function(){ snoozeAuth(1); setTimeout(function(){ closeAuthNudge(0); }, 60); };
-el('authmodal').addEventListener('click',function(e){ if(e.target===el('authmodal')) closeAuthNudge(7); });
+el('authclose').onclick=function(){ authNudgeSkip=null; closeAuthNudge(7); };
+el('authskip').onclick=function(){ var f=authNudgeSkip; authNudgeSkip=null; if(f){ closeAuthNudge(0); f(); } else { closeAuthNudge(7); } };
+el('authgo').onclick=function(){ authNudgeSkip=null; snoozeAuth(1); setTimeout(function(){ closeAuthNudge(0); }, 60); };
+el('authmodal').addEventListener('click',function(e){ if(e.target===el('authmodal')){ authNudgeSkip=null; closeAuthNudge(7); } });
 el('setclose').onclick=closeSettings;
 el('setmodal').addEventListener('click',function(e){ if(e.target===el('setmodal')) closeSettings(); });
 // Methodology deep-dive modal.
@@ -1925,21 +1941,23 @@ function renderAuthStatus(){
   var b=el('authStatus'); if(!b) return;
   var status, action;
   if(admin.me){
-    status='Signed in as admin'; action='<span id="authAct" class="authlink" data-act="settings">Settings</span>';
+    status='Signed in as admin'; action='<button id="authAct" class="pillbtn ghost" data-act="settings">Settings</button>';
   } else if(web && web.linked){
-    status='Signed in as '+esc(web.name||'you'); action='<span id="authAct" class="authlink" data-act="settings">Settings</span>';
+    status='Signed in as '+esc(web.name||'you'); action='<button id="authAct" class="pillbtn ghost" data-act="settings">Settings</button>';
   } else if(web && web.id){
-    status='Voting anonymously'; action='<span id="authAct" class="authlink" data-act="settings">Settings</span>';
+    status='Voting anonymously'; action='<button id="authAct" class="pillbtn ghost" data-act="settings">Settings</button>';
   } else {
-    status='Not logged in'; action='<span id="authAct" class="authlink" data-act="connect">Connect Telegram</span>';
+    status='Not logged in'; action='<button id="authAct" class="pillbtn" data-act="connect">Connect Telegram</button>';
   }
   b.innerHTML='<div class="authbox-s">'+status+'</div><div class="authbox-a">'+action+'</div>';
   b.style.display='block';
   var a=el('authAct');
-  if(a){ a.onclick = a.getAttribute('data-act')==='connect' ? openAuthNudge : openSettings; }
+  if(a){ a.onclick = a.getAttribute('data-act')==='connect' ? function(){ openAuthNudge(); } : openSettings; }
 }
-// Force-open the Telegram nudge (ignores the snooze; used by the connect link).
-function openAuthNudge(){ var m=el('authmodal'); if(m) m.classList.add('open'); }
+// Force-open the Telegram nudge. The optional onSkip runs if the user picks
+// keep voting anonymously — used to gate Start voting behind the prompt.
+var authNudgeSkip=null;
+function openAuthNudge(onSkip){ authNudgeSkip=onSkip||null; var m=el('authmodal'); if(m) m.classList.add('open'); }
 
 // ---- Settings: edit curator profile (role + interests) + log out ----
 function openSettings(){ el('setmodal').classList.add('open'); renderSettings(); }
@@ -1956,7 +1974,7 @@ function renderSettings(){
     body+='<p class="subnote">Your role and interests tag your votes for the peer-segment analysis. Update them anytime.</p>'+
       '<div class="field"><label>Your role</label><select id="s-role">'+roleOpts+'</select></div>'+
       '<div class="field"><label>Your interests</label><div class="lchips" id="s-chips">'+chips+'</div></div>'+
-      '<button class="btn" id="s-save">Save profile</button>';
+      '<div class="setrow"><button class="btn" id="s-save">Save profile</button></div>';
   } else {
     body+='<p class="subnote">Connect via Telegram to set up an editable curator profile.</p>';
   }
@@ -1985,9 +2003,18 @@ function renderSettings(){
   var lw=el('s-logout-web'); if(lw) lw.onclick=function(){ web=null; try{saveWeb();localStorage.removeItem('radar-web');}catch(e){} closeSettings(); renderAuthStatus(); adminToast('Signed out.'); if(route()==='vote') render(); };
 }
 function initAdmin(){
-  // Just ask the server — a valid httpOnly session cookie means admin mode.
+  // A valid httpOnly session cookie means admin mode. If there isn't one yet but
+  // we're a known curator (web magic-link token) who happens to be an admin,
+  // establish the admin session automatically — so 'logged in as myself' is
+  // recognized as admin without a separate /admin step.
   return adminReq('GET','/api/admin/me').then(function(r){
     if(r.status===200 && r.body && r.body.ok){ admin.me=r.body; renderAuthStatus(); return true; }
+    if(web && web.token){
+      return adminReq('POST','/api/admin/session',{webToken:web.token}).then(function(r2){
+        if(r2.status===200 && r2.body && r2.body.ok){ admin.me=r2.body; renderAuthStatus(); return true; }
+        admin.me=null; return false;
+      });
+    }
     admin.me=null; return false;
   }).catch(function(){ return false; });
 }
@@ -2017,10 +2044,13 @@ if(hamb){ hamb.addEventListener('click', function(){
 document.querySelectorAll('#nav button').forEach(function(b){
   b.addEventListener('click', function(){ location.hash = b.getAttribute('data-route'); closeMenu(); });
 });
+function updateThemeIcon(){ var b=el('themeToggle'); if(b){ var dark=document.documentElement.classList.contains('dark'); b.textContent = dark ? '☀️' : '🌙'; b.setAttribute('aria-label', dark?'Switch to light mode':'Switch to dark mode'); } }
 el('themeToggle').addEventListener('click', function(){
   var d = document.documentElement.classList.toggle('dark');
   try{ localStorage.setItem('radar-theme', d?'dark':'light'); }catch(e){}
+  updateThemeIcon();
 });
+updateThemeIcon();
 
 Promise.all([getJSON('/api/editions.json'), getJSON('/api/overview.json')]).then(function(res){
   state.editions = res[0].editions; state.edition = res[0].current || (state.editions[0]&&state.editions[0].edition);

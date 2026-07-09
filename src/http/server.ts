@@ -607,14 +607,23 @@ export function createServer() {
   // session cookie. The token is single-use and expires in 15 min; the session
   // lasts 12h. This replaces sending a long-lived token on every request.
   app.post('/api/admin/session', (req, res) => {
-    const token = String((req.body ?? {}).token || '').trim()
-    if (!token) return res.status(400).json({ ok: false, error: 'no-token' })
+    const body = req.body ?? {}
+    const token = String(body.token || '').trim()
+    const webToken = String(body.webToken || '').trim()
+    if (!token && !webToken) return res.status(400).json({ ok: false, error: 'no-token' })
     let curatorId: number | null = null
     // Preview-only shortcut so the bot-less preview app stays testable.
     if (process.env.PREVIEW_ADMIN_TOKEN && token === process.env.PREVIEW_ADMIN_TOKEN) {
       curatorId = config.adminIds[0] ?? null
-    } else {
+    } else if (token) {
       curatorId = repo.consumeAdminLoginToken(token)
+    } else if (webToken) {
+      // A curator's persistent magic-link token: if that curator is an admin,
+      // establish an admin session so 'logged in as myself' is recognized as
+      // admin. (The token is already a bearer credential for that curator; this
+      // exchanges it for a session once, not on every request.)
+      const cur = repo.getCuratorByToken(webToken)
+      curatorId = cur ? cur.id : null
     }
     if (curatorId == null) return res.status(401).json({ ok: false, error: 'invalid-or-expired' })
     const ctx = adminForCurator(curatorId)
