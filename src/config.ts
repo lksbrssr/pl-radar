@@ -17,6 +17,10 @@ export const config = {
   /** HTTP port for /health and the public results API. */
   port: Number(process.env.PORT || 3000),
 
+  /** Public base URL of the web app, used to build personal "vote on the web"
+   *  magic links sent from the bot. Override with WEB_URL in other envs. */
+  webUrl: (process.env.WEB_URL || 'https://plrd-radar-curator.fly.dev').replace(/\/+$/, ''),
+
   /** Telegram user IDs allowed to run admin commands. */
   adminIds: (process.env.ADMIN_IDS || '')
     .split(',')

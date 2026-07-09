@@ -35,7 +35,7 @@ bot.command('vote', async (ctx) => {
 
 bot.command('settings', async (ctx) => {
   // Re-runs the wizard; existing answers are simply overwritten.
-  await ctx.reply('Let’s update your preferences. 🛠️')
+  await ctx.reply('Let’s update your preferences.')
   await beginOnboarding(ctx)
 })
 
@@ -56,7 +56,7 @@ bot.command('resume', async (ctx) => {
 bot.command('stats', async (ctx) => {
   if (!ctx.from || !isAdmin(ctx.from.id)) return
   await ctx.reply(
-    `📊 <b>Radar curation stats</b>\n` +
+    `<b>Radar curation stats</b>\n` +
       `Curators onboarded: <b>${repo.countCurators()}</b>\n` +
       `Active cards: <b>${repo.getActiveCards().length}</b>\n` +
       `Total votes: <b>${repo.totalVotes()}</b>`,
@@ -74,7 +74,7 @@ bot.command('leaderboard', async (ctx) => {
     .map((a) => `  ${a.value}: ${(a.winRate * 100).toFixed(0)}%`)
     .join('\n')
   await ctx.reply(
-    `🏆 <b>Top cards (Elo)</b>\n${lines.join('\n') || '(no votes yet)'}\n\n` +
+    `<b>Top cards (Elo)</b>\n${lines.join('\n') || '(no votes yet)'}\n\n` +
       `<b>Win-rate by focus area</b>\n${areas || '(n/a)'}`,
     { parse_mode: 'HTML' },
   )
@@ -98,7 +98,7 @@ bot.on('message:text', async (ctx) => {
   if (!curator?.onboarded_at) {
     await beginOnboarding(ctx)
   } else {
-    await ctx.reply('Tap /vote for a round, or /help to see what I can do. 🥊')
+    await ctx.reply('Tap /vote for a round, or /help to see what I can do.')
   }
 })
 

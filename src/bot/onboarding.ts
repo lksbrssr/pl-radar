@@ -12,6 +12,7 @@ import { copy } from './copy.js'
 import { kb } from './keyboards.js'
 import { FOCUS_AREAS } from '../types.js'
 import { startRound } from './voting.js'
+import { webVoteUrl } from './links.js'
 
 /** Entry point — /start. Registers the curator and shows the welcome card. */
 export async function beginOnboarding(ctx: Context): Promise<void> {
@@ -74,7 +75,7 @@ export async function handleOnboardingCallback(
         const focusCount = repo.getFocusAreas(from.id).length
         await ctx.editMessageText(copy.done(curator?.role ?? null, focusCount), {
           parse_mode: 'HTML',
-          reply_markup: kb.begin(),
+          reply_markup: kb.begin(webVoteUrl(from.id)),
         })
       } else {
         // Toggle a focus area in place.

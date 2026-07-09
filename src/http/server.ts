@@ -289,6 +289,25 @@ export function createServer() {
     res.json({ id })
   })
 
+  // Claim a personal magic-link token (sent by the bot) → resolve it to the real
+  // Telegram curator so browser votes count under their identity + segment. The
+  // token is a bearer credential (whoever has the link can vote as them) — fine
+  // for this low-stakes crowd-curation flow, and the same trust model as the
+  // anonymous web-voter token.
+  app.post('/api/web/claim', (req, res) => {
+    const token = String((req.body ?? {}).token || '')
+    const curator = token ? repo.getCuratorByToken(token) : undefined
+    if (!curator) return res.status(404).json({ ok: false })
+    res.json({
+      ok: true,
+      id: curator.id,
+      role: curator.role ?? '',
+      focus: repo.getFocusAreas(curator.id),
+      name: curator.first_name ?? null,
+      linked: curator.id > 0, // a real Telegram curator (vs. anonymous web voter)
+    })
+  })
+
   // Pick a fresh challenger for the current edition, excluding the cards already
   // on screen (comma-separated ids). Least-seen first, so votes spread evenly.
   app.get('/api/vote/challenger', (req, res) => {

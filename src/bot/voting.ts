@@ -18,6 +18,7 @@ import type { SessionState } from './session.js'
 import { copy, escapeHtml } from './copy.js'
 import { kb } from './keyboards.js'
 import { renderMatchup } from './cardImage.js'
+import { webVoteUrl } from './links.js'
 import type { Card } from '../types.js'
 
 function truncate(s: string, n: number): string {
@@ -28,9 +29,9 @@ function truncate(s: string, n: number): string {
 function caption(top: Card, bottom: Card, index: number): string {
   return (
     `<b>Match-up ${index}</b> — tap the stronger signal. ` +
-    `👑 your pick stays put.\n\n` +
-    `🅰 <a href="${top.href}">${escapeHtml(truncate(top.title, 90))}</a>\n` +
-    `🅱 <a href="${bottom.href}">${escapeHtml(truncate(bottom.title, 90))}</a>`
+    `Your pick stays put.\n\n` +
+    `<b>A</b>: <a href="${top.href}">${escapeHtml(truncate(top.title, 90))}</a>\n` +
+    `<b>B</b>: <a href="${bottom.href}">${escapeHtml(truncate(bottom.title, 90))}</a>`
   )
 }
 
@@ -130,9 +131,9 @@ export async function handleVotingCallback(
     repo.clearSession(from.id)
     await ctx.reply(copy.roundComplete(s.cast ?? 0), {
       parse_mode: 'HTML',
-      reply_markup: kb.another(),
+      reply_markup: kb.another(webVoteUrl(from.id)),
     })
-    await ctx.answerCallbackQuery({ text: '🎉 Thanks for voting!' }).catch(() => {})
+    await ctx.answerCallbackQuery({ text: 'Thanks for voting!' }).catch(() => {})
     return true
   }
 
@@ -148,7 +149,7 @@ export async function handleVotingCallback(
       repo.setSession(from.id, s)
       await editMatchup(ctx, s, index)
     }
-    await ctx.answerCallbackQuery({ text: 'Skipped ⏭' }).catch(() => {})
+    await ctx.answerCallbackQuery({ text: 'Skipped' }).catch(() => {})
     return true
   }
 
@@ -199,7 +200,7 @@ export async function handleVotingCallback(
       s.comparison = index + 1
       repo.setSession(from.id, s)
       await editMatchup(ctx, s, s.comparison)
-      await ctx.answerCallbackQuery({ text: '🔁 Fresh pair — spreading the votes' }).catch(() => {})
+      await ctx.answerCallbackQuery({ text: 'Fresh pair — spreading the votes' }).catch(() => {})
       return true
     }
     // Fall through to normal behaviour if we can't find two fresh cards.
@@ -212,7 +213,7 @@ export async function handleVotingCallback(
     repo.clearSession(from.id)
     await ctx.reply(copy.roundComplete(s.cast ?? 0), {
       parse_mode: 'HTML',
-      reply_markup: kb.another(),
+      reply_markup: kb.another(webVoteUrl(from.id)),
     })
     await ctx.answerCallbackQuery({ text: "That's the whole pool — nice work!" }).catch(() => {})
     return true
@@ -223,6 +224,6 @@ export async function handleVotingCallback(
   repo.setSession(from.id, s)
 
   await editMatchup(ctx, s, s.comparison)
-  await ctx.answerCallbackQuery({ text: '👑 Your pick stays on!' }).catch(() => {})
+  await ctx.answerCallbackQuery({ text: 'Your pick stays on' }).catch(() => {})
   return true
 }

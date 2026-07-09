@@ -78,6 +78,8 @@ export type Curator = {
   role: string | null
   cadence: number | null
   status: string
+  /** Magic-link/browser-voter token; NULL for chat-only Telegram curators. */
+  web_token: string | null
   created_at: string
   onboarded_at: string | null
   last_active_at: string | null
