@@ -864,16 +864,22 @@ export function createServer() {
   // Everything the Data view needs, in one call. Preference is decomposed with
   // the pairwise part-worth estimator (see ranking/partworths.ts), not marginal
   // win-rates. We compute each fit once and reuse it across the four views.
-  app.get('/api/overview.json', (_req, res) => {
+  app.get('/api/overview.json', (req, res) => {
+    // Scope the whole analysis to one edition, or all-time (default). Everything
+    // below — part-worths, per-segment fits, consensus, supply/demand — uses the
+    // same scope so the numbers are consistent and the UI can label them.
+    const q = (req.query.edition as string) || 'all'
+    const edition = /^\d{4}-\d{2}$/.test(q) ? q : undefined
     const feats = cardFeatureMap()
-    const baseline = globalPartWorths(feats)
+    const baseline = globalPartWorths(feats, edition)
     const roleFits: RoleFit[] = ROLES.map((r) => ({
       role: r.key,
-      fit: partWorthsForProfile({ role: r.key }, feats),
+      fit: partWorthsForProfile({ role: r.key }, feats, edition),
     }))
 
     res.json({
       generatedAt: new Date().toISOString(),
+      scope: edition || 'all',
       curators: repo.countCurators(),
       totalVotes: repo.totalVotes(),
       lenses: {
@@ -905,9 +911,9 @@ export function createServer() {
         }),
       },
       // View 3 — consensus vs contested cards.
-      consensus: consensusContested(roleFits, feats),
+      consensus: consensusContested(roleFits, feats, undefined, edition),
       // View 4 — supply/demand gap (a sourcing instruction for ingestion).
-      supplyDemand: supplyDemandGap(baseline, feats),
+      supplyDemand: supplyDemandGap(baseline, feats, edition),
       // NB: the curator list (names/profiles) is intentionally NOT here — it's
       // admin-only now, served by /api/admin/curators.
     })

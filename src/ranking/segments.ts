@@ -135,20 +135,24 @@ function toEdition(board: ReturnType<typeof rankCards>, edition: string) {
  * "whose votes count" logic lives, shared by the Elo lens and the part-worth
  * estimator (ranking/partworths.ts).
  */
-export function votesForProfile(p: Profile): VoteRow[] {
-  if (!hasFilters(p)) {
-    return db
-      .prepare('SELECT winner_card_id, loser_card_id FROM votes ORDER BY id')
-      .all() as VoteRow[]
+export function votesForProfile(p: Profile, edition?: string): VoteRow[] {
+  const conds: string[] = []
+  const params: unknown[] = []
+  if (hasFilters(p)) {
+    const w = curatorWhere(p)
+    conds.push(`v.curator_id IN (SELECT c.id FROM curators c WHERE ${w.sql})`)
+    params.push(...w.params)
   }
-  const w = curatorWhere(p)
+  // Scope to one edition (matchups are same-edition, so the winner's edition is
+  // the vote's edition). Omit for the all-time view.
+  if (edition) {
+    conds.push(`v.winner_card_id IN (SELECT id FROM cards WHERE edition = ?)`)
+    params.push(edition)
+  }
+  const where = conds.length ? `WHERE ${conds.join(' AND ')}` : ''
   return db
-    .prepare(
-      `SELECT v.winner_card_id, v.loser_card_id FROM votes v
-       WHERE v.curator_id IN (SELECT c.id FROM curators c WHERE ${w.sql})
-       ORDER BY v.id`,
-    )
-    .all(...w.params) as VoteRow[]
+    .prepare(`SELECT v.winner_card_id, v.loser_card_id FROM votes v ${where} ORDER BY v.id`)
+    .all(...params) as VoteRow[]
 }
 
 /** Every pairwise vote cast by a single curator (for the admin per-curator
