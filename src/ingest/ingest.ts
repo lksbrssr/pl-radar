@@ -12,8 +12,9 @@ import { allSources } from './sources/index.js'
 import type { Candidate } from './types.js'
 import { upsertContent, upsertCardForContent, getActiveCards } from '../db/repo.js'
 import { contentIdentity } from './identity.js'
-import { sanitizeText } from './util.js'
+import { sanitizeText, inferAreaOrNull } from './util.js'
 import { resolveCardImage } from './image.js'
+import { config } from '../config.js'
 
 /** Editions ingested by default. June & July 2026 for the initial rollout. */
 export const DEFAULT_EDITIONS = ['2026-06', '2026-07']
@@ -39,6 +40,8 @@ export type IngestResult = {
   deduped: number
   skippedEdition: number
   undated: number
+  /** External items dropped for matching no focus area / PL signal. */
+  offTopic: number
   perEdition: Record<string, number>
 }
 
@@ -69,6 +72,7 @@ export async function ingestSources(opts: IngestOptions = {}): Promise<IngestRes
   let deduped = 0
   let skippedEdition = 0
   let undated = 0
+  let offTopic = 0
   const perEdition = new Map<string, number>()
   // For --dry, track identities across the run so cross-posts show in the counts
   // (real ingest dedups via the DB content layer).
@@ -92,6 +96,20 @@ export async function ingestSources(opts: IngestOptions = {}): Promise<IngestRes
       }
       if (!allEditions && !allowed.has(edition)) {
         skippedEdition++
+        continue
+      }
+      // On-mission gate: drop EXTERNAL items that only landed in the generic
+      // catch-all bucket AND whose text carries no focus-area / PL signal.
+      // Explicitly-tagged cards (a real research area, or a feed area override)
+      // and all internal PL sources are never dropped. See config.dropOffMission.
+      if (
+        config.dropOffMission &&
+        source.external &&
+        c.areaSlug === 'protocol-labs' &&
+        inferAreaOrNull(`${c.title} ${c.description ?? ''}`) === null
+      ) {
+        offTopic++
+        log(`    ⊘ off-mission ${c.title.slice(0, 52)}`)
         continue
       }
       kept.push({ c, edition })
@@ -152,7 +170,7 @@ export async function ingestSources(opts: IngestOptions = {}): Promise<IngestRes
   log(
     `${dry ? 'Would ingest' : 'Ingested'} ${ingested} card(s)` +
       (byEdition ? ` (${byEdition})` : '') +
-      `. ${deduped} cross-posted (deduped), ${skippedEdition} out-of-scope, ${undated} undated.` +
+      `. ${deduped} cross-posted (deduped), ${skippedEdition} out-of-scope, ${undated} undated, ${offTopic} off-mission.` +
       (dry ? '' : ` Pool now: ${getActiveCards().length} active (active edition).`),
   )
 
@@ -162,6 +180,7 @@ export async function ingestSources(opts: IngestOptions = {}): Promise<IngestRes
     deduped,
     skippedEdition,
     undated,
+    offTopic,
     perEdition: Object.fromEntries(perEdition),
   }
 }
