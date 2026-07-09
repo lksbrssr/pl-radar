@@ -52,6 +52,7 @@ import {
   aiAvailable,
 } from '../config.js'
 import { allSources } from '../ingest/sources/index.js'
+import { ingestSources } from '../ingest/ingest.js'
 import { activeCardCountByKeyPrefix } from '../ingest/stats.js'
 import { parseCardDraft } from '../submit/parse.js'
 import { parseSourceDraft, NoFeedError } from '../submit/parse.js'
@@ -523,9 +524,11 @@ export function createServer() {
     }
   })
 
-  // Persist a reviewed recurring source. From here the normal background ingest
-  // polls it on schedule (see scheduler.ts) — no code PR, no restart.
-  app.post('/api/submit/source', (req, res) => {
+  // Persist a reviewed recurring source, then IMMEDIATELY ingest it so the
+  // curator sees its cards right away instead of waiting for the next
+  // background poll (see scheduler.ts). The scheduled re-ingest still runs on
+  // its interval to pick up future posts — no code PR, no restart.
+  app.post('/api/submit/source', async (req, res) => {
     if (!guard(req, res)) return
     const b = req.body ?? {}
     const name = String(b.name || '').trim()
@@ -552,7 +555,38 @@ export function createServer() {
       homepage: typeof b.homepage === 'string' && b.homepage ? b.homepage : null,
       areaSlug,
     })
-    res.json({ ok: true, source: { key: src.key, name: src.name, feedUrl: src.feed_url } })
+
+    // Ingest just this source right now so the Cards view is populated on the
+    // spot. Scoped to the new key (fast), and failures here are non-fatal — the
+    // source is already saved and the scheduled ingest will retry it.
+    let ingest: {
+      ingested: number
+      deduped: number
+      skippedEdition: number
+      undated: number
+      perEdition: Record<string, number>
+    } | null = null
+    let ingestError: string | null = null
+    try {
+      const r = await ingestSources({ sourceKey: src.key })
+      ingest = {
+        ingested: r.ingested,
+        deduped: r.deduped,
+        skippedEdition: r.skippedEdition,
+        undated: r.undated,
+        perEdition: r.perEdition,
+      }
+    } catch (err) {
+      console.error('[submit] initial ingest of new source failed:', err)
+      ingestError = 'Source saved, but the first fetch failed — it will be retried on the next scheduled ingest.'
+    }
+
+    res.json({
+      ok: true,
+      source: { key: src.key, name: src.name, feedUrl: src.feed_url },
+      ingest,
+      ingestError,
+    })
   })
 
   // Everything the Data view needs, in one call. Preference is decomposed with
