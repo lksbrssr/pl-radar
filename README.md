@@ -15,7 +15,7 @@ care about what*.
 > **New here (agent or human)?** Read **[`AGENTS.md`](./AGENTS.md)** first — it's
 > the cold-start briefing: stack, hosts, how to run locally, and how to ship a
 > PR with a live preview. You should be able to start a fresh session, say
-> "we're working on the PL Radar thing, repo is `lksbrssr/plrd-radar-curator`",
+> "we're working on the PL Radar thing, repo is `lksbrssr/pl-radar`",
 > and file a PR without a long ramp-up.
 
 > **Status:** Live in production on Fly.io (Telegram bot + web app + API). The
@@ -259,7 +259,7 @@ backend is deployed and has real votes.)
 - **Visual change → screenshot in the PR.** Commit the PNG under
   `docs/screenshots/` and link it **by commit SHA** (branch names have slashes
   that break raw URLs):
-  `https://raw.githubusercontent.com/lksbrssr/plrd-radar-curator/<SHA>/docs/screenshots/foo.png`
+  `https://raw.githubusercontent.com/lksbrssr/pl-radar/<SHA>/docs/screenshots/foo.png`
 - **Live preview of your branch** (Vercel-style, on Fly — web-only, no bot, self-seeds demo data):
   ```bash
   fly deploy --config fly.preview.toml --app plrd-radar-curator-preview

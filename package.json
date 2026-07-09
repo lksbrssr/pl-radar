@@ -1,5 +1,5 @@
 {
-  "name": "plrd-radar-curator",
+  "name": "pl-radar",
   "version": "0.1.0",
   "private": true,
   "description": "Crowd-curation Telegram bot for the PL R&D Radar. Curators vote on pairs of candidate cards (king-of-the-hill); Elo + segmented analysis surface the strongest signal for the public Radar.",

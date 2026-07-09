@@ -17,7 +17,7 @@ a Vote view, and curation analytics.
 
 ## Facts you need
 
-- **Repo:** `github.com/lksbrssr/plrd-radar-curator` (public). Default branch `main`.
+- **Repo:** `github.com/lksbrssr/pl-radar` (public). Default branch `main`.
 - **Language/stack:** Node ≥20, **TypeScript** (run via `tsx`, no separate build in dev).
   - **grammY** — Telegram bot framework (long polling, no webhook).
   - **better-sqlite3** — storage. One file; `votes` is the source of truth, Elo is a derived cache.
@@ -67,7 +67,7 @@ gh pr create --base main --fill
   skill). GitHub can't embed private/branch raw URLs, so: commit the PNG under
   `docs/screenshots/`, and reference it by **commit SHA** (branch names contain
   slashes and break raw URLs):
-  `https://raw.githubusercontent.com/lksbrssr/plrd-radar-curator/<SHA>/docs/screenshots/foo.png`
+  `https://raw.githubusercontent.com/lksbrssr/pl-radar/<SHA>/docs/screenshots/foo.png`
 - **Deploy a live preview** of your branch so the reviewer can click it:
   ```bash
   fly deploy --config fly.preview.toml --app plrd-radar-curator-preview
