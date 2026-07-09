@@ -11,6 +11,10 @@ export const config = {
    *  so tools like `npm run seed` run without needing a token. */
   botToken: process.env.BOT_TOKEN || '',
 
+  /** Public @username of the bot (no @), used for t.me links in the web app.
+   *  Override with BOT_USERNAME when you switch bots. */
+  botUsername: (process.env.BOT_USERNAME || 'pl_radar_bot').replace(/^@/, ''),
+
   /** Path to the SQLite database file. */
   databasePath: process.env.DATABASE_PATH || '.data/radar.sqlite',
 

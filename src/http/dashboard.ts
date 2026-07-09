@@ -24,7 +24,10 @@
  * (no framework, no build step).
  */
 
+import { config } from '../config.js'
+
 export function renderDashboard(): string {
+  const bot = config.botUsername
   return `<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -73,6 +76,14 @@ export function renderDashboard(): string {
     align-items:center;justify-content:center;}
   .hamb:hover{background:var(--gray-50);}
   .side-foot{margin-top:auto;display:flex;flex-direction:column;gap:8px;}
+  .footdiv{border:none;border-top:1px solid var(--line);margin:4px 0 10px;width:100%;}
+  .authbox{display:flex;flex-direction:column;gap:2px;margin-bottom:4px;}
+  .authbox-s{font-size:12.5px;font-weight:600;color:var(--ink);}
+  .authbox-a{font-size:12px;}
+  .setsheet{max-width:440px;padding:28px 26px 22px;position:relative;}
+  .setsheet h3{font-family:Newsreader,serif;font-size:24px;margin:0 0 14px;}
+  .setacct{margin-top:18px;padding-top:14px;border-top:1px solid var(--line);font-size:13px;}
+  .setacct-h{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-bottom:6px;}
   .toggle{border:1px solid var(--line);background:var(--white);color:var(--ink);
     border-radius:999px;padding:8px 12px;font-size:12.5px;cursor:pointer;}
   .side-foot .tg{font-size:12px;color:var(--muted);}
@@ -542,10 +553,11 @@ export function renderDashboard(): string {
       <button data-route="data">Insights</button>
       <button data-route="method">Methodology</button>
     </nav>
-    <div class="adminnote" id="authStatus" style="display:none"></div>
     <div class="side-foot">
-      <button class="toggle" id="themeToggle">◐ Theme</button>
-      <div class="tg">Vote in Telegram:<br><a href="https://t.me/lksbrssr_radar_bot" target="_blank">@lksbrssr_radar_bot</a></div>
+      <hr class="footdiv">
+      <div class="authbox" id="authStatus"></div>
+      <button class="toggle" id="themeToggle">Theme</button>
+      <div class="tg">Vote in Telegram:<br><a href="https://t.me/${bot}" target="_blank">@${bot}</a></div>
     </div>
   </aside>
   <main class="main"><div class="wrap" id="view"><div class="loading">Loading…</div></div></main>
@@ -598,10 +610,17 @@ export function renderDashboard(): string {
     <li><b>Match-ups come to you</b> — a couple of pairs a day in chat, so you keep curating without remembering to visit.</li>
     <li><b>Be recognized</b> — show up as you, not an anonymous “Web voter.”</li>
   </ul>
-  <a class="btn authcta" id="authgo" href="https://t.me/lksbrssr_radar_bot?start=web" target="_blank" rel="noopener">Continue with Telegram →</a>
+  <a class="btn authcta" id="authgo" href="https://t.me/${bot}?start=web" target="_blank" rel="noopener">Continue with Telegram →</a>
   <button class="authskip" id="authskip">No thanks — I’ll keep voting anonymously</button>
 </div></div>
 
+<div class="modal" id="setmodal"><div class="sheet setsheet">
+  <button class="close" id="setclose">×</button>
+  <h3 id="set-h">Settings</h3>
+  <div id="set-body"></div>
+</div></div>
+
+<script>window.BOT_USERNAME=${JSON.stringify(bot)};</script>
 <script>
 ${CLIENT_JS}
 </script>
@@ -624,6 +643,7 @@ var CTA = { Talk:'Watch the talk', Podcast:'Listen now', Publication:'Read the p
 function area(s){ return AREA[s]||AREA.default; }
 function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function el(id){ return document.getElementById(id); }
+var TG='https://t.me/'+(window.BOT_USERNAME||'pl_radar_bot');
 function getJSON(u){ return fetch(u).then(function(r){ return r.json(); }); }
 // Focus-area icons matching plrd.org/about (self-hosted, tinted via CSS mask).
 var FA_ICON = {
@@ -999,7 +1019,7 @@ function renderVoteOnboarding(){
       '<div class="field"><label>Your role</label><select id="vRole">'+roleOpts+'</select></div>'+
       '<div class="field"><label>Your interests</label><div class="lchips" id="vChips">'+chips+'</div></div>'+
       '<button class="btn" id="vStart">Start voting →</button>'+
-      '<p class="muted" style="margin-top:16px;font-size:13px">Prefer chat? You can also vote in Telegram: <a href="https://t.me/lksbrssr_radar_bot" target="_blank">@lksbrssr_radar_bot</a></p>'+
+      '<p class="muted" style="margin-top:16px;font-size:13px">Prefer chat? You can also vote in Telegram: <a href="'+TG+'" target="_blank">@'+(window.BOT_USERNAME||'pl_radar_bot')+'</a></p>'+
     '</div>';
   var focus=[];
   el('view').querySelectorAll('[data-vfocus]').forEach(function(b){ b.addEventListener('click', function(){
@@ -1071,7 +1091,7 @@ function renderVoteSession(){
   var foot = linked
     ? ''
     : '<div class="votefoot"><button id="vReset">Change interests</button>'+
-      '<a href="https://t.me/lksbrssr_radar_bot" target="_blank">Vote in Telegram instead</a></div>';
+      '<a href="'+TG+'" target="_blank">Vote in Telegram instead</a></div>';
   el('view').innerHTML =
     '<h2 class="title">Vote</h2>'+
     '<p class="lead">Tap the stronger signal for the Radar. Your pick stays and faces a new challenger.</p>'+
@@ -1869,13 +1889,15 @@ el('authclose').onclick=function(){ closeAuthNudge(7); };
 el('authskip').onclick=function(){ closeAuthNudge(7); };
 el('authgo').onclick=function(){ snoozeAuth(1); setTimeout(function(){ closeAuthNudge(0); }, 60); };
 el('authmodal').addEventListener('click',function(e){ if(e.target===el('authmodal')) closeAuthNudge(7); });
+el('setclose').onclick=closeSettings;
+el('setmodal').addEventListener('click',function(e){ if(e.target===el('setmodal')) closeSettings(); });
 // Methodology deep-dive modal.
 el('methclose').onclick=closeMeth;
 el('methmodal').addEventListener('click',function(e){ if(e.target===el('methmodal')) closeMeth(); });
 // Add-source/add-card wizard modal.
 el('wizclose').onclick=closeWiz;
 el('wizmodal').addEventListener('click',function(e){ if(e.target===el('wizmodal')) closeWiz(); });
-document.addEventListener('keydown',function(e){ if(e.key==='Escape'){ closeModal(); closeWarn(); closeWiz(); closeAuthNudge(7); } });
+document.addEventListener('keydown',function(e){ if(e.key==='Escape'){ closeModal(); closeWarn(); closeWiz(); closeAuthNudge(7); closeSettings(); } });
 
 // ---- Boot ----
 function render(){
@@ -1901,23 +1923,67 @@ function can(right){ return !!(admin.me && (admin.me.root || (admin.me.rights||[
 // anonymous — with a one-tap way to connect for anonymous users.
 function renderAuthStatus(){
   var b=el('authStatus'); if(!b) return;
-  var html, link=false;
+  var status, action;
   if(admin.me){
-    html='logged in as admin · <span id="authAct" class="authlink">log out</span>'; link='logout';
+    status='Signed in as admin'; action='<span id="authAct" class="authlink" data-act="settings">Settings</span>';
   } else if(web && web.linked){
-    html='signed in as '+esc(web.name||'you');
+    status='Signed in as '+esc(web.name||'you'); action='<span id="authAct" class="authlink" data-act="settings">Settings</span>';
   } else if(web && web.id){
-    html='voting anonymously · <span id="authAct" class="authlink">connect Telegram</span>'; link='connect';
+    status='Voting anonymously'; action='<span id="authAct" class="authlink" data-act="settings">Settings</span>';
   } else {
-    html='not logged in · <span id="authAct" class="authlink">connect Telegram</span>'; link='connect';
+    status='Not logged in'; action='<span id="authAct" class="authlink" data-act="connect">Connect Telegram</span>';
   }
-  b.innerHTML='<div class="adminnote-t">'+html+'</div>';
+  b.innerHTML='<div class="authbox-s">'+status+'</div><div class="authbox-a">'+action+'</div>';
   b.style.display='block';
   var a=el('authAct');
-  if(a){ a.onclick = link==='logout' ? adminLogout : openAuthNudge; }
+  if(a){ a.onclick = a.getAttribute('data-act')==='connect' ? openAuthNudge : openSettings; }
 }
 // Force-open the Telegram nudge (ignores the snooze; used by the connect link).
 function openAuthNudge(){ var m=el('authmodal'); if(m) m.classList.add('open'); }
+
+// ---- Settings: edit curator profile (role + interests) + log out ----
+function openSettings(){ el('setmodal').classList.add('open'); renderSettings(); }
+function closeSettings(){ el('setmodal').classList.remove('open'); }
+function renderSettings(){
+  var ov=state.overview||{lenses:{roles:[],areas:[]}};
+  var canProfile = !!(web && web.token);
+  var curRole = (web && web.role) || '';
+  var curFocus = (web && web.focus) || [];
+  var body='';
+  if(canProfile){
+    var roleOpts='<option value="">Prefer not to say</option>'+ov.lenses.roles.map(function(r){ return '<option value="'+r.key+'"'+(r.key===curRole?' selected':'')+'>'+esc(r.label)+'</option>'; }).join('');
+    var chips=ov.lenses.areas.map(function(a){ var on=curFocus.indexOf(a.slug)>=0; return '<button type="button" class="lchip'+(on?' on':'')+'" data-sfocus="'+a.slug+'">'+esc(a.label)+'</button>'; }).join('');
+    body+='<p class="subnote">Your role and interests tag your votes for the peer-segment analysis. Update them anytime.</p>'+
+      '<div class="field"><label>Your role</label><select id="s-role">'+roleOpts+'</select></div>'+
+      '<div class="field"><label>Your interests</label><div class="lchips" id="s-chips">'+chips+'</div></div>'+
+      '<button class="btn" id="s-save">Save profile</button>';
+  } else {
+    body+='<p class="subnote">Connect via Telegram to set up an editable curator profile.</p>';
+  }
+  // Account actions (log out).
+  var acts=[];
+  if(admin.me) acts.push('<span class="authlink" id="s-logout-admin">Log out of admin</span>');
+  if(web && web.id) acts.push('<span class="authlink" id="s-logout-web">'+(web.linked?'Sign out of this browser':'Forget my anonymous profile')+'</span>');
+  if(!acts.length) acts.push('<span class="muted">Not logged in.</span>');
+  body+='<div class="setacct"><div class="setacct-h">Account</div>'+acts.join(' · ')+'</div>';
+  el('set-body').innerHTML=body;
+  // Wire interests toggles + save.
+  if(canProfile){
+    el('set-body').querySelectorAll('[data-sfocus]').forEach(function(bn){ bn.addEventListener('click', function(){ bn.classList.toggle('on'); }); });
+    el('s-save').addEventListener('click', function(){
+      var role=el('s-role').value;
+      var focus=[]; el('set-body').querySelectorAll('[data-sfocus].on').forEach(function(bn){ focus.push(bn.getAttribute('data-sfocus')); });
+      var btn=el('s-save'); btn.disabled=true; btn.textContent='Saving…';
+      fetch('/api/web/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:web.token,role:role,focus:focus})})
+        .then(function(r){return r.json();}).then(function(res){
+          web.role=role; web.focus=focus; if(res&&res.name) web.name=res.name; saveWeb(); renderAuthStatus();
+          adminToast('Profile saved.'); closeSettings();
+        }).catch(function(){ btn.disabled=false; btn.textContent='Save profile'; adminToast('Save failed.',false); });
+    });
+  }
+  var la=el('s-logout-admin'); if(la) la.onclick=function(){ closeSettings(); adminLogout(); };
+  var lw=el('s-logout-web'); if(lw) lw.onclick=function(){ web=null; try{saveWeb();localStorage.removeItem('radar-web');}catch(e){} closeSettings(); renderAuthStatus(); adminToast('Signed out.'); if(route()==='vote') render(); };
+}
 function initAdmin(){
   // Just ask the server — a valid httpOnly session cookie means admin mode.
   return adminReq('GET','/api/admin/me').then(function(r){
