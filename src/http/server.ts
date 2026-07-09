@@ -60,7 +60,7 @@ import { parseSourceDraft, NoFeedError } from '../submit/parse.js'
 import { FetchFailedError } from '../submit/fetch.js'
 import { LlmUnavailableError } from '../submit/llm.js'
 import { findDuplicate } from '../submit/dedup.js'
-import { requireAdmin, RIGHTS } from '../admin/auth.js'
+import { requireAdmin, RIGHTS, ADMIN_COOKIE, adminForCurator, readCookie } from '../admin/auth.js'
 import { broadcastRound } from '../bot/broadcast.js'
 
 const REPO_URL = 'https://github.com/lksbrssr/plrd-radar-curator'
@@ -603,8 +603,57 @@ export function createServer() {
   // whole surface is a no-op unless at least one root admin (ADMIN_IDS) exists.
   // ----------------------------------------------------------------------
 
-  // Whoami — used by the UI to decide whether to show the Admin tab + which
-  // sub-tabs. Returns 401 for non-admins (the UI just hides the tab then).
+  // Exchange a one-time login token (from the bot's /admin link) for an httpOnly
+  // session cookie. The token is single-use and expires in 15 min; the session
+  // lasts 12h. This replaces sending a long-lived token on every request.
+  app.post('/api/admin/session', (req, res) => {
+    const token = String((req.body ?? {}).token || '').trim()
+    if (!token) return res.status(400).json({ ok: false, error: 'no-token' })
+    let curatorId: number | null = null
+    // Preview-only shortcut so the bot-less preview app stays testable.
+    if (process.env.PREVIEW_ADMIN_TOKEN && token === process.env.PREVIEW_ADMIN_TOKEN) {
+      curatorId = config.adminIds[0] ?? null
+    } else {
+      curatorId = repo.consumeAdminLoginToken(token)
+    }
+    if (curatorId == null) return res.status(401).json({ ok: false, error: 'invalid-or-expired' })
+    const ctx = adminForCurator(curatorId)
+    if (!ctx) return res.status(403).json({ ok: false, error: 'not-admin' })
+    repo.purgeExpiredAdminAuth()
+    const sid = repo.createAdminSession(curatorId)
+    const secure = req.secure || req.headers['x-forwarded-proto'] === 'https'
+    res.cookie(ADMIN_COOKIE, sid, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure,
+      path: '/',
+      maxAge: 12 * 3600 * 1000,
+    })
+    repo.logAdminAction(curatorId, 'admin.login', null, null)
+    res.json({
+      ok: true,
+      curatorId: ctx.curatorId,
+      name: ctx.name,
+      root: ctx.root,
+      rights: ctx.root ? [...RIGHTS] : [...ctx.rights],
+      allRights: [...RIGHTS],
+    })
+  })
+
+  app.post('/api/admin/logout', (req, res) => {
+    const sid = readCookie(req, ADMIN_COOKIE)
+    if (sid) repo.deleteAdminSession(sid)
+    res.clearCookie(ADMIN_COOKIE, { path: '/' })
+    res.json({ ok: true })
+  })
+
+  // Append-only audit trail of admin actions (manage_admins).
+  app.get('/api/admin/audit', (req, res) => {
+    if (!requireAdmin(req, res, 'manage_admins')) return
+    res.json({ ok: true, entries: repo.listAdminAudit(Number(req.query.limit) || 100) })
+  })
+
+  // Whoami — the UI calls this on load; a valid session cookie => admin mode.
   app.get('/api/admin/me', (req, res) => {
     const ctx = requireAdmin(req, res)
     if (!ctx) return
@@ -634,12 +683,14 @@ export function createServer() {
     const makeAdmin = !!b.admin
     if (!makeAdmin) {
       repo.setCuratorAdmin(id, false)
+      repo.logAdminAction(res.locals.admin?.curatorId, 'curator.demote', String(id), null)
       return res.json({ ok: true, id, admin: false, rights: [] })
     }
     const rights = Array.isArray(b.rights)
       ? b.rights.filter((r: string) => (RIGHTS as readonly string[]).includes(r))
       : [...RIGHTS] // promote with all rights by default
     repo.setCuratorRights(id, rights, res.locals.admin?.curatorId)
+    repo.logAdminAction(res.locals.admin?.curatorId, 'curator.promote', String(id), rights.join(','))
     res.json({ ok: true, id, admin: true, rights })
   })
 
@@ -688,6 +739,7 @@ export function createServer() {
     } else {
       return res.status(404).json({ ok: false, error: 'not-found' })
     }
+    repo.logAdminAction(res.locals.admin?.curatorId, 'source.edit', key, JSON.stringify(b))
     console.log(`[admin] source ${key} edited by ${res.locals.admin?.curatorId}`)
     res.json({ ok: true })
   })
@@ -703,6 +755,7 @@ export function createServer() {
     }
     const withCards = req.query.withCards === '1' || req.query.withCards === 'true'
     const r = repo.deleteFeedSource(key, withCards)
+    repo.logAdminAction(res.locals.admin?.curatorId, 'source.delete', key, `cards:${r.cards}`)
     console.log(
       `[admin] source ${key} removed by ${res.locals.admin?.curatorId} (cards: ${r.cards})`,
     )
@@ -750,6 +803,7 @@ export function createServer() {
     }
     const updated = repo.updateCard(id, patch)
     if (!updated) return res.status(404).json({ ok: false, error: 'not-found' })
+    repo.logAdminAction(res.locals.admin?.curatorId, patch.active === false ? 'card.hide' : (patch.active === true ? 'card.restore' : 'card.edit'), String(id), updated.title)
     console.log(`[admin] card ${id} edited by ${res.locals.admin?.curatorId}`)
     res.json({ ok: true })
   })
@@ -758,6 +812,7 @@ export function createServer() {
     if (!requireAdmin(req, res, 'manage_cards')) return
     const removed = repo.deleteCard(Number(req.params.id))
     if (!removed) return res.status(404).json({ ok: false, error: 'not-found' })
+    repo.logAdminAction(res.locals.admin?.curatorId, 'card.delete', String(req.params.id), null)
     console.log(`[admin] card ${req.params.id} removed by ${res.locals.admin?.curatorId}`)
     res.json({ ok: true })
   })
@@ -789,6 +844,7 @@ export function createServer() {
     if (!requireAdmin(req, res, 'trigger_rounds')) return
     try {
       const r = await broadcastRound()
+      repo.logAdminAction(res.locals.admin?.curatorId, 'round.trigger', null, `sent:${r.sent} failed:${r.failed}`)
       console.log(`[admin] round broadcast by ${res.locals.admin?.curatorId}: ${JSON.stringify(r)}`)
       res.json({ ok: true, ...r })
     } catch (err) {

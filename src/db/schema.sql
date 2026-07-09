@@ -40,6 +40,33 @@ CREATE TABLE IF NOT EXISTS curator_admin_rights (
   PRIMARY KEY (curator_id, right)
 );
 
+-- One-time, short-TTL admin sign-in tokens (minted by the bot's /admin command)
+-- and the httpOnly session they exchange into. See src/admin/auth.ts.
+CREATE TABLE IF NOT EXISTS admin_login_tokens (
+  token       TEXT PRIMARY KEY,
+  curator_id  INTEGER NOT NULL,
+  expires_at  TEXT NOT NULL,          -- ISO/SQLite datetime; single-use
+  used        INTEGER NOT NULL DEFAULT 0,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS admin_sessions (
+  sid         TEXT PRIMARY KEY,
+  curator_id  INTEGER NOT NULL,
+  expires_at  TEXT NOT NULL,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Append-only audit trail of admin mutations (who did what, when).
+CREATE TABLE IF NOT EXISTS admin_audit (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  curator_id  INTEGER,
+  action      TEXT NOT NULL,          -- e.g. 'card.delete', 'source.hide', 'curator.promote'
+  target      TEXT,                    -- the affected key/id
+  detail      TEXT,                    -- optional human note
+  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_admin_audit_created ON admin_audit(created_at DESC);
+
 -- Admin on/off switch for ANY source (code-defined or dynamic). A missing row
 -- means active; active=0 hides the source everywhere (ingest skips it, the
 -- public Sources list omits it). Code sources can't be deleted, only hidden;

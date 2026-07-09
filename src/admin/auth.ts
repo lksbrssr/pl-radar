@@ -29,12 +29,28 @@ export type AdminContext = {
   rights: Set<Right>
 }
 
-/** Resolve the admin context for a magic-link token, or null if not an admin. */
-export function adminFromToken(token: string | undefined | null): AdminContext | null {
-  if (!token) return null
-  const curator = repo.getCuratorByToken(token.trim())
-  if (!curator) return null
-  return adminForCurator(curator.id)
+/** Parse a named cookie out of the raw Cookie header (no cookie-parser dep). */
+export function readCookie(req: express.Request, name: string): string | null {
+  const raw = req.headers.cookie
+  if (!raw) return null
+  for (const part of raw.split(';')) {
+    const i = part.indexOf('=')
+    if (i === -1) continue
+    if (part.slice(0, i).trim() === name) return decodeURIComponent(part.slice(i + 1).trim())
+  }
+  return null
+}
+
+/** Name of the httpOnly admin session cookie. */
+export const ADMIN_COOKIE = 'pla_sid'
+
+/** Resolve the admin context from the session cookie, or null. */
+export function adminFromRequest(req: express.Request): AdminContext | null {
+  const sid = readCookie(req, ADMIN_COOKIE)
+  if (!sid) return null
+  const curatorId = repo.getAdminSessionCurator(sid)
+  if (curatorId == null) return null
+  return adminForCurator(curatorId)
 }
 
 /** Resolve the admin context for a curator id, or null if not an admin. */
@@ -69,8 +85,7 @@ export function requireAdmin(
   res: express.Response,
   right?: Right,
 ): AdminContext | null {
-  const token = req.get('x-admin-token') || (req.query.t as string) || ''
-  const ctx = adminFromToken(token)
+  const ctx = adminFromRequest(req)
   if (!ctx) {
     res.status(401).json({ ok: false, error: 'not-admin' })
     return null

@@ -67,10 +67,14 @@ and no password to leak**:
 Because it's the curator's real Telegram identity, every admin action is
 attributable, and revoking is instant (demote, or rotate the token).
 
-> **Threat model / hardening (TODO):** tokens are currently long-lived (same as
-> the vote link). For the panel we should move to **short-TTL, single-use**
-> admin tokens (issue on `/admin`, expire in ~15 min, exchange for an
-> httpOnly session cookie). Tracked below.
+> **Sign-in is short-TTL + single-use.** `/admin` mints a one-time token that
+> expires in ~15 min (`admin_login_tokens`). The web app immediately exchanges
+> it (`POST /api/admin/session`) for an **httpOnly, SameSite=Lax, Secure**
+> session cookie (`pla_sid`, 12 h, `admin_sessions`); the one-time token is
+> marked used so it can't be replayed. All `/api/admin/*` calls authenticate off
+> the cookie — no long-lived token is ever sent from JS. `POST /api/admin/logout`
+> clears the cookie + deletes the session. Every admin action is written to
+> `admin_audit` (`GET /api/admin/audit`).
 
 ## API surface (`/api/admin/*`, all behind the admin guard)
 
@@ -138,7 +142,8 @@ CREATE TABLE curator_admin_rights (
 - [x] Card edit modal (reuses the add-card wizard form)
 - [x] Sidebar admin badge
 - [x] CODEOWNERS + `admin-guard` CI check on the trust boundary
-- [ ] Short-TTL single-use admin tokens + httpOnly session cookie
-- [ ] Audit-log table (persist admin actions, not just console)
+- [x] Short-TTL single-use admin tokens + httpOnly session cookie
+- [x] Audit-log table (`admin_audit`) + `GET /api/admin/audit` + logout
+- [x] Tests for the capability guard + sign-in (`npm test`)
 - [ ] Seed in-app rounds for web voters on manual trigger
-- [ ] Tests for the capability guard
+- [ ] Admin “activity” view surfacing the audit log in the UI

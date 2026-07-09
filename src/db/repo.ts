@@ -1019,3 +1019,96 @@ export function disabledSourceKeys(): string[] {
     db.prepare('SELECT key FROM source_state WHERE active = 0').all() as { key: string }[]
   ).map((r) => r.key)
 }
+
+// ---------------------------------------------------------------------------
+// Admin sign-in: one-time short-TTL tokens → httpOnly sessions, + audit log.
+// See docs/admin-panel.md and src/admin/auth.ts.
+// ---------------------------------------------------------------------------
+
+const ADMIN_LOGIN_TTL = '+15 minutes'
+const ADMIN_SESSION_TTL = '+12 hours'
+
+/** Mint a single-use, 15-minute admin sign-in token for a curator. */
+export function createAdminLoginToken(curatorId: number): string {
+  const token = 'al_' + randomBytes(24).toString('hex')
+  db.prepare(
+    `INSERT INTO admin_login_tokens (token, curator_id, expires_at)
+     VALUES (?, ?, datetime('now', ?))`,
+  ).run(token, curatorId, ADMIN_LOGIN_TTL)
+  return token
+}
+
+/** Consume a login token: returns the curator id if valid+unused+unexpired,
+ *  else null. Marks it used so it can't be replayed. */
+export function consumeAdminLoginToken(token: string): number | null {
+  const row = db
+    .prepare(
+      `SELECT curator_id FROM admin_login_tokens
+       WHERE token = ? AND used = 0 AND expires_at > datetime('now')`,
+    )
+    .get(token) as { curator_id: number } | undefined
+  if (!row) return null
+  db.prepare('UPDATE admin_login_tokens SET used = 1 WHERE token = ?').run(token)
+  return row.curator_id
+}
+
+/** Create a 12-hour admin session; returns the opaque session id (cookie value). */
+export function createAdminSession(curatorId: number): string {
+  const sid = 'as_' + randomBytes(24).toString('hex')
+  db.prepare(
+    `INSERT INTO admin_sessions (sid, curator_id, expires_at)
+     VALUES (?, ?, datetime('now', ?))`,
+  ).run(sid, curatorId, ADMIN_SESSION_TTL)
+  return sid
+}
+
+/** The curator behind a session id, or null if unknown/expired. */
+export function getAdminSessionCurator(sid: string): number | null {
+  const row = db
+    .prepare(
+      `SELECT curator_id FROM admin_sessions WHERE sid = ? AND expires_at > datetime('now')`,
+    )
+    .get(sid) as { curator_id: number } | undefined
+  return row ? row.curator_id : null
+}
+
+export function deleteAdminSession(sid: string): void {
+  db.prepare('DELETE FROM admin_sessions WHERE sid = ?').run(sid)
+}
+
+/** Housekeeping: drop expired tokens + sessions (called opportunistically). */
+export function purgeExpiredAdminAuth(): void {
+  db.prepare(`DELETE FROM admin_login_tokens WHERE expires_at <= datetime('now')`).run()
+  db.prepare(`DELETE FROM admin_sessions WHERE expires_at <= datetime('now')`).run()
+}
+
+export function logAdminAction(
+  curatorId: number | undefined,
+  action: string,
+  target?: string | null,
+  detail?: string | null,
+): void {
+  db.prepare(
+    `INSERT INTO admin_audit (curator_id, action, target, detail) VALUES (?, ?, ?, ?)`,
+  ).run(curatorId ?? null, action, target ?? null, detail ?? null)
+}
+
+export function listAdminAudit(limit = 100) {
+  return db
+    .prepare(
+      `SELECT a.id, a.curator_id, a.action, a.target, a.detail, a.created_at,
+              c.first_name, c.username
+       FROM admin_audit a LEFT JOIN curators c ON c.id = a.curator_id
+       ORDER BY a.id DESC LIMIT ?`,
+    )
+    .all(Math.min(limit, 500)) as {
+    id: number
+    curator_id: number | null
+    action: string
+    target: string | null
+    detail: string | null
+    created_at: string
+    first_name: string | null
+    username: string | null
+  }[]
+}
