@@ -529,7 +529,7 @@ export function renderDashboard(): string {
       <button data-route="data">Insights</button>
       <button data-route="method">Methodology</button>
     </nav>
-    <div class="adminnote" id="adminNote" style="display:none"><div class="adminnote-t">logged in as admin</div></div>
+    <div class="adminnote" id="adminNote" style="display:none"><div class="adminnote-t">logged in as admin · <span id="adminLogout" style="cursor:pointer;text-decoration:underline">log out</span></div></div>
     <div class="side-foot">
       <button class="toggle" id="themeToggle">◐ Theme</button>
       <div class="tg">Vote in Telegram:<br><a href="https://t.me/lksbrssr_radar_bot" target="_blank">@lksbrssr_radar_bot</a></div>
@@ -631,10 +631,10 @@ function magicToken(){
 }
 // Admin magic-link token (same web_token, sent as x-admin-token). Captured from
 // a #admin?t=… deep link the bot mints, then persisted for later visits.
-var adminTok=null; try{ adminTok=localStorage.getItem('radar-admin')||null; }catch(e){}
-function adminHeaders(){ var h={'Content-Type':'application/json'}; if(adminTok) h['x-admin-token']=adminTok; return h; }
+// Admin auth is cookie-based: a one-time link token is exchanged for an httpOnly
+// session (see /api/admin/session); requests just ride the same-origin cookie.
 function adminReq(method,path,body){
-  return fetch(path,{method:method,headers:adminHeaders(),body:body?JSON.stringify(body):undefined})
+  return fetch(path,{method:method,headers:{'Content-Type':'application/json'},credentials:'same-origin',body:body?JSON.stringify(body):undefined})
     .then(function(r){ return r.json().then(function(j){return {status:r.status,body:j};},function(){return {status:r.status,body:{}};}); });
 }
 function claimMagic(){
@@ -1840,7 +1840,7 @@ function render(){
   else if(r==='sources'){ renderSources(); }
   else if(r==='method'){ renderMethodology(); }
   else if(r==='admin'){ // sign-in landing from the bot's /admin link → capture token, then go to Cards
-    var t=magicToken(); if(t && !admin.me){ adminTok=t; initAdmin().then(function(){ try{history.replaceState(null,'','#cards');}catch(e){} render(); }); }
+    var t=magicToken(); if(t){ adminSignIn(t).then(function(){ try{history.replaceState(null,'','#cards');}catch(e){} render(); }); }
     else { try{history.replaceState(null,'','#cards');}catch(e){ location.hash='cards'; } render(); }
   }
 }
@@ -1851,20 +1851,21 @@ var admin = { me:null };
 function can(right){ return !!(admin.me && (admin.me.root || (admin.me.rights||[]).indexOf(right)>=0)); }
 function adminBadge(){ var b=el('adminNote'); if(!b) return; if(admin.me){ b.style.display='block'; b.title='Admin: '+admin.me.name+(admin.me.root?' (root)':''); } }
 function initAdmin(){
-  // The admin token is the same magic-link token used for web voting: prefer an
-  // explicit admin token, else the web identity's token, else one in the hash.
-  var t = adminTok || (web && web.token) || magicToken();
-  if(!t) return Promise.resolve(false);
-  adminTok = t;
+  // Just ask the server — a valid httpOnly session cookie means admin mode.
   return adminReq('GET','/api/admin/me').then(function(r){
-    if(r.status===200 && r.body && r.body.ok){
-      admin.me=r.body; try{ localStorage.setItem('radar-admin', t); }catch(e){}
-      adminBadge();
-      return true;
-    }
-    if(localStorage.getItem('radar-admin')){ try{ localStorage.removeItem('radar-admin'); }catch(e){} }
-    return false;
+    if(r.status===200 && r.body && r.body.ok){ admin.me=r.body; adminBadge(); return true; }
+    admin.me=null; return false;
   }).catch(function(){ return false; });
+}
+// Exchange a one-time link token for the httpOnly admin session cookie.
+function adminSignIn(token){
+  return adminReq('POST','/api/admin/session',{token:token}).then(function(r){
+    if(r.status===200 && r.body && r.body.ok){ admin.me=r.body; adminBadge(); return true; }
+    admin.me=null; return false;
+  }).catch(function(){ return false; });
+}
+function adminLogout(){
+  adminReq('POST','/api/admin/logout',{}).then(function(){ admin.me=null; var n=el('adminNote'); if(n) n.style.display='none'; adminToast('Logged out of admin.'); render(); });
 }
 // Lightweight toast for admin action feedback (create-on-demand).
 function adminToast(msg, ok){
@@ -1886,13 +1887,14 @@ el('themeToggle').addEventListener('click', function(){
   var d = document.documentElement.classList.toggle('dark');
   try{ localStorage.setItem('radar-theme', d?'dark':'light'); }catch(e){}
 });
+var aLogout=el('adminLogout'); if(aLogout) aLogout.addEventListener('click', adminLogout);
 Promise.all([getJSON('/api/editions.json'), getJSON('/api/overview.json')]).then(function(res){
   state.editions = res[0].editions; state.edition = res[0].current || (state.editions[0]&&state.editions[0].edition);
   state.overview = res[1];
   if(!state.editions.some(function(e){return e.edition===state.edition;}) && state.editions[0]) state.edition=state.editions[0].edition;
   var landedAdmin = route()==='admin';
-  if(landedAdmin){ var at=magicToken(); if(at){ adminTok=at; try{ localStorage.setItem('radar-admin',at); }catch(e){} } }
-  claimMagic().then(function(){ return initAdmin(); }).then(function(){
+  var loginTok = landedAdmin ? magicToken() : '';
+  claimMagic().then(function(){ return loginTok ? adminSignIn(loginTok) : initAdmin(); }).then(function(){
     if(landedAdmin){ try{ history.replaceState(null,'','#cards'); }catch(e){ location.hash='cards'; } }
     render();
   });

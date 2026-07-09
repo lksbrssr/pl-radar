@@ -80,12 +80,14 @@ bot.command('admin', async (ctx) => {
     username: ctx.from.username,
     first_name: ctx.from.first_name,
   })
-  const token = repo.getOrCreateCuratorWebToken(ctx.from.id)
+  // One-time, 15-minute sign-in token; the web app exchanges it for an httpOnly
+  // session cookie (see /api/admin/session). Single-use — can't be replayed.
+  const token = repo.createAdminLoginToken(ctx.from.id)
   const url = `${config.webUrl}/#admin?t=${encodeURIComponent(token)}`
   const rights = adminCtx.root ? 'all rights (root admin)' : [...adminCtx.rights].join(', ') || 'no rights yet'
   await ctx.reply(
-    `<b>Admin access</b>\nOpen your private link — don’t share it, it signs you in:\n${url}\n\n` +
-      `Admin controls then appear inline: edit/hide/delete on <b>Cards</b> &amp; <b>Sources</b>, the curator roster + per-curator lens on <b>Insights</b>, and a “send a round” button on <b>Vote</b>.\n\nAccess: ${rights}`,
+    `<b>Admin access</b>\nOpen this one-time link — it signs you in and then expires (single-use, ~15 min):\n${url}\n\n` +
+      `Admin controls then appear inline: edit/hide/delete on <b>Cards</b> &amp; <b>Sources</b>, the curator roster + per-curator lens on <b>Insights</b>, and a “trigger a vote” button on <b>Vote</b>.\n\nAccess: ${rights}`,
     { parse_mode: 'HTML', link_preview_options: { is_disabled: true } },
   )
 })
