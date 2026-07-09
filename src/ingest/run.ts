@@ -11,6 +11,8 @@
  *   --source=<key>            Only run one source (e.g. --source=plrd-insights).
  *   --editions=<m1,m2,...>    Editions to accept, as YYYY-MM (default June/July 2026).
  *                             Pass --editions=all to ingest every month.
+ *   --no-images               Skip header-image validation / hero fallback
+ *                             (faster, offline-friendly).
  */
 import { ingestSources, DEFAULT_EDITIONS } from './ingest.js'
 
@@ -33,6 +35,7 @@ ingestSources({
   dry: flag('dry') !== undefined,
   sourceKey: flag('source') || undefined,
   editions,
+  resolveImages: flag('no-images') === undefined,
   log: (line) => console.log(line),
 }).catch((err) => {
   console.error('ingest fatal:', err)
