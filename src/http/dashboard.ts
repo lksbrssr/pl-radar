@@ -590,14 +590,13 @@ export function renderDashboard(): string {
 <div class="modal" id="authmodal"><div class="sheet authsheet">
   <button class="close" id="authclose">×</button>
   <div class="authic">🛰️</div>
-  <h3>Become a recognized curator</h3>
-  <p class="authlede">Your votes already count toward the Radar, even anonymously — but they live only in <i>this</i> browser. Connect Telegram (under a minute, no password) to make it stick.</p>
+  <h3>Vote as yourself</h3>
+  <p class="authlede">Connect through Telegram — under a minute, no password required — to vote as yourself instead of anonymously.</p>
   <ul class="authbenefits">
     <li><b>No new account</b> — if you already have Telegram, you’re one tap away. No signup, no password.</li>
-    <li><b>Keep your identity</b> — anonymous votes vanish if you clear this browser or switch device; connect once and you’re the same curator everywhere.</li>
-    <li><b>Match-ups come to you</b> — a couple of pairs a day in chat, so you actually keep curating without remembering to visit.</li>
-    <li><b>Be recognized</b> — show up as you, not an anonymous “Web voter,” in the curator stats.</li>
-    <li><b>Help lock the cut</b> — we can ping you when the month’s top-5 is too close to call.</li>
+    <li><b>Keep your identity</b> — anonymous voting lives only in this browser; switch device or clear it and you start over as a new anonymous voter. Connect once and you’re the same curator everywhere.</li>
+    <li><b>Match-ups come to you</b> — a couple of pairs a day in chat, so you keep curating without remembering to visit.</li>
+    <li><b>Be recognized</b> — show up as you, not an anonymous “Web voter.”</li>
   </ul>
   <a class="btn authcta" id="authgo" href="https://t.me/lksbrssr_radar_bot?start=web" target="_blank" rel="noopener">Continue with Telegram →</a>
   <button class="authskip" id="authskip">No thanks — I’ll keep voting anonymously</button>
