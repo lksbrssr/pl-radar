@@ -52,7 +52,7 @@ import {
   submitEnabled,
   aiAvailable,
 } from '../config.js'
-import { allSources } from '../ingest/sources/index.js'
+import { allSources, SOURCES } from '../ingest/sources/index.js'
 import { ingestSources } from '../ingest/ingest.js'
 import { activeCardCountByKeyPrefix } from '../ingest/stats.js'
 import { parseCardDraft } from '../submit/parse.js'
@@ -379,14 +379,16 @@ export function createServer() {
       repoUrl: REPO_URL,
       sourcesDir: `${REPO_URL}/tree/main/src/ingest/sources`,
       guideUrl: `${REPO_URL}/blob/main/src/ingest/README.md`,
-      sources: allSources().map((s) => ({
-        key: s.key,
-        name: s.name,
-        description: s.description,
-        homepage: s.homepage ?? null,
-        external: !!s.external,
-        cards: s.keyPrefix ? activeCardCountByKeyPrefix(s.keyPrefix) : 0,
-      })),
+      sources: allSources()
+        .filter((s) => !new Set(repo.disabledSourceKeys()).has(s.key))
+        .map((s) => ({
+          key: s.key,
+          name: s.name,
+          description: s.description,
+          homepage: s.homepage ?? null,
+          external: !!s.external,
+          cards: s.keyPrefix ? activeCardCountByKeyPrefix(s.keyPrefix) : 0,
+        })),
     })
   })
 
@@ -642,45 +644,67 @@ export function createServer() {
   })
 
   // --- Sources (manage_sources) ---
+  // Lists EVERY source — code-defined and dynamic. Code sources can be hidden
+  // (not deleted); dynamic feeds can be hidden or deleted.
   app.get('/api/admin/sources', (req, res) => {
     if (!requireAdmin(req, res, 'manage_sources')) return
-    const sources = repo.listFeedSources(false).map((s) => ({
+    const disabled = new Set(repo.disabledSourceKeys())
+    const code = SOURCES.map((s) => ({
       key: s.key,
       name: s.name,
-      description: s.description,
-      feedUrl: s.feed_url,
-      homepage: s.homepage,
-      areaSlug: s.area_slug,
-      active: !!s.active,
-      cards: activeCardCountByKeyPrefix(s.key + '-'),
-      createdAt: s.created_at,
+      feedUrl: null as string | null,
+      dynamic: false,
+      active: !disabled.has(s.key),
+      cards: s.keyPrefix ? activeCardCountByKeyPrefix(s.keyPrefix) : 0,
     }))
-    res.json({ ok: true, sources })
+    const dyn = repo.listFeedSources(false).map((s) => ({
+      key: s.key,
+      name: s.name,
+      feedUrl: s.feed_url,
+      dynamic: true,
+      active: !!s.active && !disabled.has(s.key),
+      cards: activeCardCountByKeyPrefix(s.key + '-'),
+    }))
+    res.json({ ok: true, sources: [...code, ...dyn] })
   })
 
   app.patch('/api/admin/sources/:key', (req, res) => {
     if (!requireAdmin(req, res, 'manage_sources')) return
     const b = req.body ?? {}
-    const patch: Record<string, unknown> = {}
-    if (typeof b.name === 'string') patch.name = b.name.trim()
-    if (typeof b.description === 'string') patch.description = b.description
-    if (typeof b.active === 'boolean') patch.active = b.active
-    if (typeof b.areaSlug === 'string' || b.areaSlug === null)
-      patch.area_slug =
-        b.areaSlug && FOCUS_AREAS.some((a) => a.slug === b.areaSlug) ? b.areaSlug : null
-    const updated = repo.updateFeedSource(req.params.key, patch)
-    if (!updated) return res.status(404).json({ ok: false, error: 'not-found' })
-    console.log(`[admin] source ${req.params.key} edited by ${res.locals.admin?.curatorId}`)
+    const key = req.params.key
+    const feed = repo.getFeedSource(key)
+    if (feed) {
+      const patch: Record<string, unknown> = {}
+      if (typeof b.name === 'string') patch.name = b.name.trim()
+      if (typeof b.description === 'string') patch.description = b.description
+      if (typeof b.active === 'boolean') patch.active = b.active
+      if (typeof b.areaSlug === 'string' || b.areaSlug === null)
+        patch.area_slug =
+          b.areaSlug && FOCUS_AREAS.some((a) => a.slug === b.areaSlug) ? b.areaSlug : null
+      repo.updateFeedSource(key, patch)
+    } else if (SOURCES.some((s) => s.key === key)) {
+      // Code-defined source: only the on/off switch applies (can't rename code).
+      if (typeof b.active === 'boolean') repo.setSourceActive(key, b.active)
+    } else {
+      return res.status(404).json({ ok: false, error: 'not-found' })
+    }
+    console.log(`[admin] source ${key} edited by ${res.locals.admin?.curatorId}`)
     res.json({ ok: true })
   })
 
   app.delete('/api/admin/sources/:key', (req, res) => {
     if (!requireAdmin(req, res, 'manage_sources')) return
+    const key = req.params.key
+    if (!repo.getFeedSource(key)) {
+      // Code-defined sources live in the repo — they can only be hidden.
+      if (SOURCES.some((s) => s.key === key))
+        return res.status(400).json({ ok: false, error: 'code-source-hide-only' })
+      return res.status(404).json({ ok: false, error: 'not-found' })
+    }
     const withCards = req.query.withCards === '1' || req.query.withCards === 'true'
-    const r = repo.deleteFeedSource(req.params.key, withCards)
-    if (!r.source) return res.status(404).json({ ok: false, error: 'not-found' })
+    const r = repo.deleteFeedSource(key, withCards)
     console.log(
-      `[admin] source ${req.params.key} removed by ${res.locals.admin?.curatorId} (cards: ${r.cards})`,
+      `[admin] source ${key} removed by ${res.locals.admin?.curatorId} (cards: ${r.cards})`,
     )
     res.json({ ok: true, removedCards: r.cards })
   })

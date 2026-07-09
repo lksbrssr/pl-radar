@@ -1002,3 +1002,20 @@ export function listEditionCardsAdmin(edition: string): Card[] {
     .prepare(`SELECT ${CARD_COLUMNS} FROM cards c WHERE c.edition = ? ORDER BY c.active DESC, c.rating DESC`)
     .all(edition) as Card[]
 }
+
+// --- Source on/off state (admin can hide any source; delete only dynamic) ----
+
+/** Enable/disable any source by key (code-defined or dynamic). */
+export function setSourceActive(key: string, active: boolean): void {
+  db.prepare(
+    `INSERT INTO source_state (key, active, updated_at) VALUES (?, ?, datetime('now'))
+     ON CONFLICT(key) DO UPDATE SET active = excluded.active, updated_at = excluded.updated_at`,
+  ).run(key, active ? 1 : 0)
+}
+
+/** Keys explicitly disabled via source_state (active = 0). */
+export function disabledSourceKeys(): string[] {
+  return (
+    db.prepare('SELECT key FROM source_state WHERE active = 0').all() as { key: string }[]
+  ).map((r) => r.key)
+}

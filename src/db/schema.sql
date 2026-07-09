@@ -40,6 +40,16 @@ CREATE TABLE IF NOT EXISTS curator_admin_rights (
   PRIMARY KEY (curator_id, right)
 );
 
+-- Admin on/off switch for ANY source (code-defined or dynamic). A missing row
+-- means active; active=0 hides the source everywhere (ingest skips it, the
+-- public Sources list omits it). Code sources can't be deleted, only hidden;
+-- dynamic feeds can be either. See src/http/server.ts /api/admin/sources.
+CREATE TABLE IF NOT EXISTS source_state (
+  key        TEXT PRIMARY KEY,
+  active     INTEGER NOT NULL DEFAULT 1,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Many-to-many: a curator's focus-area interests (segment tags).
 CREATE TABLE IF NOT EXISTS curator_focus (
   curator_id INTEGER NOT NULL REFERENCES curators(id) ON DELETE CASCADE,
