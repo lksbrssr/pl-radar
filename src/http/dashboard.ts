@@ -1523,10 +1523,12 @@ function renderSourceSuccess(){
       var parts=eds.map(function(ed){ return ing.perEdition[ed]+' in '+esc(edLabel(ed)); });
       summary='<p class="subnote"><b>'+ing.ingested+' new card'+(ing.ingested===1?'':'s')+'</b> added just now \u2014 '+parts.join(', ')+'.'+
         (ing.deduped?' '+ing.deduped+' were already in the pool (merged).':'')+
+        (ing.offTopic?' '+ing.offTopic+' skipped as off-mission.':'')+
         ' It\u2019s also polled on the normal schedule for future posts.</p>';
     } else {
       var why=[];
       if(ing.skippedEdition) why.push(ing.skippedEdition+' outside the current Radar window');
+      if(ing.offTopic) why.push(ing.offTopic+' off-mission (no focus-area match)');
       if(ing.undated) why.push(ing.undated+' with no publish date');
       if(ing.deduped) why.push(ing.deduped+' already in the pool');
       summary='<p class="subnote">\u201c'+esc(s.name)+'\u201d is saved, but it added <b>no new cards</b> right now'+
