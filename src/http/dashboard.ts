@@ -659,7 +659,7 @@ function areaIcon(slug, px){
     ';-webkit-mask:url('+u+') center/contain no-repeat;mask:url('+u+') center/contain no-repeat"></span>';
 }
 
-var state = { editions:[], edition:null, role:'', focus:[], dataSeg:'', overview:null, radar:null, radarCut:null, cards:{}, cardSearch:'', showHidden:false, hiddenData:null, curSeg:'' };
+var state = { editions:[], edition:null, role:'', focus:[], dataSeg:'', overview:null, radar:null, radarCut:null, cards:{}, cardSearch:'', showHidden:false, hiddenData:null, curSeg:'', dataScope:'all', dataOverview:null };
 try{ var saved=JSON.parse(localStorage.getItem('radar-lens')||'{}'); if(saved){ state.role=saved.role||''; state.focus=saved.focus||[]; } }catch(e){}
 function saveLens(){ try{ localStorage.setItem('radar-lens', JSON.stringify({role:state.role,focus:state.focus})); }catch(e){} }
 function lensActive(){ return !!(state.role || (state.focus&&state.focus.length)); }
@@ -864,8 +864,17 @@ function pwPanel(groupKey,groupLabel,levels){
   }).join('');
   return '<div class="panel"><h3>'+esc(groupLabel)+'</h3>'+rows+'</div>';
 }
+function setDataScope(scope){
+  state.dataScope=scope;
+  if(scope==='all'){ state.dataOverview=null; renderData(); return; }
+  el('view').innerHTML='<h2 class="title">Curation data</h2><div class="loading">Loading…</div>';
+  getJSON('/api/overview.json?edition='+encodeURIComponent(scope)).then(function(d){ state.dataOverview=d; renderData(); });
+}
 function renderData(){
-  var ov = state.overview, v = el('view'), pw = ov.partWorths;
+  var ov = state.dataOverview || state.overview, v = el('view'), pw = ov.partWorths;
+  var scope = state.dataScope || 'all';
+  var scopeLbl = scope==='all' ? 'all-time' : ((state.editions.find(function(e){return e.edition===scope;})||{}).label || scope);
+  var scopeOpts = '<option value="all"'+(scope==='all'?' selected':'')+'>All time</option>'+state.editions.map(function(e){ return '<option value="'+e.edition+'"'+(e.edition===scope?' selected':'')+'>'+esc(e.label)+'</option>'; }).join('');
   var aColor = function(s){ return area(s).c; };
   var aLabel = function(s){ return areaName(s); };
   var seg = state.dataSeg||'';
@@ -926,21 +935,24 @@ function renderData(){
         '<td>'+(flag==='Balanced'?'<span class="muted">'+flag+'</span>':'<span class="sdflag '+cls+'">'+flag+'</span>')+'</td></tr>';
     }).join('');
     sdHtml = '<h2 class="title" style="font-size:22px">Supply &amp; demand gap</h2>'+
-      '<p class="lead">What the crowd rewards (demand = global part-worth) vs how common it is in this month\'s pool (supply). A sourcing to-do list for ingestion.</p>'+
+      '<p class="lead">What the crowd rewards (demand = part-worth) vs how common it is in the <b>'+esc(scopeLbl)+'</b> card pool (supply). A sourcing to-do list for ingestion.</p>'+
       '<table><thead><tr><th>Attribute</th><th>Value</th><th>Demand</th><th>Supply</th><th>Signal</th></tr></thead><tbody>'+body+'</tbody></table>';
   }
 
   v.innerHTML =
     '<h2 class="title">Curation data</h2>'+
     '<p class="lead">Every pairwise vote decomposed into the independent pull of each <b>angle</b>, <b>topic</b> and <b>format</b> — controlling for the others, per segment.</p>'+
+    '<div class="controls" style="margin-bottom:4px"><div class="field"><label>Time span</label><select id="selScope">'+scopeOpts+'</select></div>'+
+      '<div class="segnote muted">Everything on this page is computed over <b>'+esc(scopeLbl)+'</b> votes and the '+esc(scopeLbl)+' card pool.</div></div>'+
     '<div class="stats">'+
       '<div class="stat"><div class="n">'+ov.curators+'</div><div class="l">Curators</div></div>'+
-      '<div class="stat"><div class="n">'+ov.totalVotes+'</div><div class="l">Votes cast</div></div>'+
+      '<div class="stat"><div class="n">'+((ov.partWorths&&ov.partWorths.global&&ov.partWorths.global.nVotes)||ov.totalVotes)+'</div><div class="l">'+(scope==='all'?'Votes cast':'Votes this span')+'</div></div>'+
     '</div>'+
     '<h2 class="title" style="font-size:22px">Part-worths by segment</h2>'+
     '<p class="lead">Pull of each attribute value in log-odds, holding the rest constant. <b>0 = this group\'s average</b>; right rewards, left penalizes. Grayed = below '+pw.threshold+' comparisons (too little data to trust).</p>'+
-    '<div class="controls"><div class="field"><label>Segment</label><select id="selSeg">'+segOpts+'</select></div>'+
-      '<div class="segnote muted">'+(segFit?('Fit on '+nVotes+' votes from '+esc(labelForRole(ov,seg))+' curators'):('Fit on all '+nVotes+' votes'))+'</div></div>'+
+    '<div class="controls">'+
+      '<div class="field"><label>Segment</label><select id="selSeg">'+segOpts+'</select></div>'+
+      '<div class="segnote muted">'+(segFit?('Fit on '+nVotes+' '+esc(scopeLbl)+' votes from '+esc(labelForRole(ov,seg))+' curators'):('Fit on all '+nVotes+' '+esc(scopeLbl)+' votes'))+'</div></div>'+
     '<div class="grid">'+pwPanels+'</div>'+
     devHtml+
     consensusHtml+
@@ -952,6 +964,7 @@ function renderData(){
       : '');
 
   var ss=el('selSeg'); if(ss) ss.addEventListener('change', function(e){ state.dataSeg=e.target.value; renderData(); });
+  var scp=el('selScope'); if(scp) scp.addEventListener('change', function(e){ setDataScope(e.target.value); });
   if(can('manage_admins')) loadAdminCurators();
 }
 

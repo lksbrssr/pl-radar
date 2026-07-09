@@ -318,13 +318,17 @@ function groupsFor(votes: Vote[], feats: Map<number, CardFeatures>): GroupSpec[]
 export function partWorthsForProfile(
   p: Profile,
   feats: Map<number, CardFeatures> = cardFeatureMap(),
+  edition?: string,
 ): FitResult {
-  const votes = votesForProfile(p)
+  const votes = votesForProfile(p, edition)
   return fitPartWorths(groupsFor(votes, feats), feats, votes)
 }
 
-export function globalPartWorths(feats?: Map<number, CardFeatures>): FitResult {
-  return partWorthsForProfile({}, feats)
+export function globalPartWorths(
+  feats?: Map<number, CardFeatures>,
+  edition?: string,
+): FitResult {
+  return partWorthsForProfile({}, feats, edition)
 }
 
 /** Part-worths fit on a SINGLE curator's votes (admin per-curator lens). Often
@@ -431,8 +435,9 @@ export function consensusContested(
   roleFits?: RoleFit[],
   feats: Map<number, CardFeatures> = cardFeatureMap(),
   minVotes = PARTWORTH_MIN_N,
+  edition?: string,
 ): { segments: number; cards: CardDispersion[] } {
-  const fits = (roleFits ?? ROLES.map((r) => ({ role: r.key, fit: partWorthsForProfile({ role: r.key }, feats) })))
+  const fits = (roleFits ?? ROLES.map((r) => ({ role: r.key, fit: partWorthsForProfile({ role: r.key }, feats, edition) })))
     .filter((rf) => rf.fit.nVotes >= minVotes)
   if (fits.length < 2) return { segments: fits.length, cards: [] }
 
@@ -441,9 +446,9 @@ export function consensusContested(
       `SELECT c.id, c.key, c.title, c.area_slug,
               (SELECT a.attr_value FROM card_attributes a
                WHERE a.card_id = c.id AND a.attr_key = 'angle' LIMIT 1) AS angle
-       FROM cards c WHERE c.active = 1 AND c.edition = ?`,
+       FROM cards c WHERE c.active = 1${edition ? ' AND c.edition = ?' : ''}`,
     )
-    .all(currentEdition()) as {
+    .all(...(edition ? [edition] : [])) as {
     id: number; key: string; title: string; area_slug: string; angle: string | null
   }[]
 
@@ -488,11 +493,12 @@ export type SupplyDemand = {
 export function supplyDemandGap(
   baseline?: FitResult,
   feats: Map<number, CardFeatures> = cardFeatureMap(),
+  edition?: string,
 ): SupplyDemand[] {
-  const base = baseline ?? globalPartWorths(feats)
+  const base = baseline ?? globalPartWorths(feats, edition)
   const pool = db
-    .prepare('SELECT id FROM cards WHERE active = 1 AND edition = ?')
-    .all(currentEdition()) as { id: number }[]
+    .prepare(`SELECT id FROM cards WHERE active = 1${edition ? ' AND edition = ?' : ''}`)
+    .all(...(edition ? [edition] : [])) as { id: number }[]
   const total = pool.length || 1
 
   // Pool composition per (group, value).
