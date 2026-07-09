@@ -479,6 +479,13 @@ export function renderDashboard(): string {
   .atable td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top;}
   .atable tr:last-child td{border-bottom:none;}
   .btn.btn-sm[disabled]{opacity:.5;cursor:default;}
+  /* Admin tab pills — own class (never mix .btn + .btn-ghost; their color/bg
+     conflict flips to white-on-white on hover). Legible in both themes. */
+  .atabs{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 10px;}
+  .atab{background:transparent;color:var(--ink);border:1px solid var(--line);border-radius:999px;
+    padding:8px 16px;font-size:13px;font-weight:500;cursor:pointer;transition:background .12s,border-color .12s;}
+  .atab:hover{background:var(--gray-50);border-color:var(--muted);color:var(--ink);}
+  .atab.on{background:var(--ink);color:var(--white);border-color:var(--ink);}
 </style></head>
 <body>
 <div class="app">
@@ -1673,7 +1680,7 @@ function render(){
 }
 
 // ---- Admin panel (gated by an admin magic-link token) ----
-var admin = { me:null, tab:'curators', data:null, msg:'' };
+var admin = { me:null, tab:'curators', data:null, msg:'', tried:false };
 function can(right){ return admin.me && (admin.me.root || (admin.me.rights||[]).indexOf(right)>=0); }
 function initAdmin(){
   if(!adminTok) return Promise.resolve(false);
@@ -1690,13 +1697,25 @@ function initAdmin(){
 function adminTabs(){
   var tabs=[['curators','Curators','manage_admins'],['sources','Sources','manage_sources'],['cards','Cards','manage_cards'],['run','Run a round','trigger_rounds']]
     .filter(function(t){ return can(t[2]); });
-  return '<div class="controls" style="gap:8px">'+tabs.map(function(t){
-    return '<button class="btn'+(admin.tab===t[0]?'':' btn-ghost')+'" data-atab="'+t[0]+'" style="cursor:pointer">'+esc(t[1])+'</button>';
+  return '<div class="atabs">'+tabs.map(function(t){
+    return '<button class="atab'+(admin.tab===t[0]?' on':'')+'" data-atab="'+t[0]+'">'+esc(t[1])+'</button>';
   }).join('')+'</div>';
 }
 function renderAdmin(){
   var v=el('view');
-  if(!admin.me){ v.innerHTML='<h2 class="title">Admin</h2><div class="panel"><p class="muted">This area needs an admin link. In Telegram, send <b>/admin</b> to the bot to get your private sign-in link.</p></div>'; return; }
+  // Self-initialise from a token in the hash (or a stored one) even when we
+  // arrive via a client-side nav rather than a full page load — boot's capture
+  // only fires on a cold load, so this makes the #admin?t=… link robust.
+  if(!admin.me){
+    var t=magicToken()||adminTok;
+    if(t && !admin.tried){
+      admin.tried=true; adminTok=t; try{localStorage.setItem('radar-admin',t);}catch(e){}
+      v.innerHTML='<h2 class="title">\ud83d\udd10 Admin</h2><div class="loading">Signing you in\u2026</div>';
+      initAdmin().then(function(ok){ if(ok){ try{history.replaceState(null,'','#admin');}catch(e){} } renderAdmin(); });
+      return;
+    }
+    v.innerHTML='<h2 class="title">Admin</h2><div class="panel"><p class="muted">This area needs an admin link. In Telegram, send <b>/admin</b> to the bot to get your private sign-in link.</p></div>'; return;
+  }
   var tabsWithRight=[['curators','manage_admins'],['sources','manage_sources'],['cards','manage_cards'],['run','trigger_rounds']].filter(function(t){return can(t[1]);});
   if(!tabsWithRight.some(function(t){return t[0]===admin.tab;})) admin.tab=(tabsWithRight[0]||['curators'])[0];
   v.innerHTML='<h2 class="title">🔐 Admin</h2>'+
