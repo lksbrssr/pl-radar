@@ -1497,19 +1497,50 @@ function doSubmitSource(){
   submitPost('/api/submit/source',{name:d.name,description:d.srcDesc,feedUrl:d.feedUrl,homepage:d.homepage,areaSlug:d.srcArea}).then(function(r){
     if(r.status===401){ saveSubmitKey(''); wiz.err='Passphrase rejected \u2014 re-enter it.'; renderWiz(); return; }
     var j=r.body||{};
-    if(j.ok){ wiz.result=j.source; wiz.view='success'; renderWiz(); return; }
+    if(j.ok){ wiz.result=j.source; wiz.ingest=j.ingest||null; wiz.ingestError=j.ingestError||null; wiz.view='success'; renderWiz(); return; }
     if(j.reason==='duplicate'){ wiz.dedup=j.duplicate; renderWiz(); return; }
     wiz.err='Could not add the source. Please try again.'; renderWiz();
   }).catch(function(){ wiz.err='Network error while adding the source.'; renderWiz(); });
 }
+var MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
+function edLabel(ed){
+  var m=(state.editions||[]).find(function(e){return e.edition===ed;});
+  if(m&&m.label) return m.label;
+  var p=/^(\d{4})-(\d{2})$/.exec(ed||'');
+  if(p){ var mo=MONTHS[(+p[2])-1]||''; return (+p[1]===new Date().getFullYear())?(mo+' Radar'):(mo+' '+p[1]); }
+  return ed;
+}
 function renderSourceSuccess(){
-  var s=wiz.result||{};
+  var s=wiz.result||{}, ing=wiz.ingest, firstEd=null;
+  // Human summary of what the immediate ingest just pulled in.
+  var summary;
+  if(wiz.ingestError){
+    summary='<p class="subnote">\u201c'+esc(s.name)+'\u201d is saved. '+esc(wiz.ingestError)+'</p>';
+  } else if(ing){
+    var eds=Object.keys(ing.perEdition||{}).sort();
+    firstEd=eds[eds.length-1]||null; // newest edition with new cards
+    if(ing.ingested>0){
+      var parts=eds.map(function(ed){ return ing.perEdition[ed]+' in '+esc(edLabel(ed)); });
+      summary='<p class="subnote"><b>'+ing.ingested+' new card'+(ing.ingested===1?'':'s')+'</b> added just now \u2014 '+parts.join(', ')+'.'+
+        (ing.deduped?' '+ing.deduped+' were already in the pool (merged).':'')+
+        ' It\u2019s also polled on the normal schedule for future posts.</p>';
+    } else {
+      var why=[];
+      if(ing.skippedEdition) why.push(ing.skippedEdition+' outside the current Radar window');
+      if(ing.undated) why.push(ing.undated+' with no publish date');
+      if(ing.deduped) why.push(ing.deduped+' already in the pool');
+      summary='<p class="subnote">\u201c'+esc(s.name)+'\u201d is saved, but it added <b>no new cards</b> right now'+
+        (why.length?' ('+why.join(', ')+')':'')+'. It\u2019s polled on the normal schedule, so future posts will land automatically.</p>';
+    }
+  } else {
+    summary='<p class="subnote">\u201c'+esc(s.name)+'\u201d is now polled on the normal schedule. New items become candidate cards automatically \u2014 duplicates are merged.</p>';
+  }
   setWiz('Source added','It\'s live',
-    '<div class="okbox"><div class="okc">\u2713</div><h4>Source added</h4>'+
-    '<p class="subnote">\u201c'+esc(s.name)+'\u201d is now polled about once a day. New items become candidate cards automatically \u2014 duplicates are merged.</p></div>',
-    '<button class="btn-ghost" id="w-again">Add another</button><button class="btn" id="w-done">Done</button>');
-  el('w-again').onclick=function(){ wiz.view=null; wiz.data.feedUrl=''; wiz.data.name=''; wiz.dedup=null; wiz.err=''; renderWiz(); };
-  el('w-done').onclick=function(){ closeWiz(); if(route()==='sources') renderSources(); };
+    '<div class="okbox"><div class="okc">\u2713</div><h4>Source added</h4>'+summary+'</div>',
+    (ing&&ing.ingested>0?'<button class="btn-ghost" id="w-again">Add another</button><button class="btn" id="w-view">View cards \u2192</button>':'<button class="btn-ghost" id="w-again">Add another</button><button class="btn" id="w-done">Done</button>'));
+  el('w-again').onclick=function(){ wiz.view=null; wiz.ingest=null; wiz.ingestError=null; wiz.data.feedUrl=''; wiz.data.name=''; wiz.dedup=null; wiz.err=''; renderWiz(); };
+  if(el('w-view')) el('w-view').onclick=function(){ closeWiz(); if(firstEd){ state.edition=firstEd; state.cardsData=null; } location.hash='cards'; };
+  if(el('w-done')) el('w-done').onclick=function(){ closeWiz(); if(route()==='sources') renderSources(); };
 }
 function renderAgentSource(){
   setWiz('Add a source via a PR','One-file pull request',
