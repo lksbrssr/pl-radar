@@ -278,6 +278,17 @@ export function renderDashboard(): string {
   .warnsheet .wicon{font-size:40px;margin-bottom:8px;}
   .warnsheet h3{font-family:Newsreader,serif;font-size:24px;margin-bottom:8px;}
   .warnsheet p{color:var(--muted);font-size:14px;line-height:1.55;margin:0 0 20px;}
+  .authsheet{max-width:440px;padding:30px 28px 22px;position:relative;text-align:center;}
+  .authic{font-size:38px;margin-bottom:6px;}
+  .authsheet h3{font-family:Newsreader,serif;font-size:24px;margin:0 0 8px;}
+  .authlede{color:var(--muted);font-size:14px;line-height:1.55;margin:0 0 18px;}
+  .authbenefits{list-style:none;padding:0;margin:0 0 22px;text-align:left;display:grid;gap:10px;}
+  .authbenefits li{font-size:13.5px;line-height:1.5;color:var(--ink);padding-left:24px;position:relative;}
+  .authbenefits li:before{content:"\u2713";position:absolute;left:0;top:0;color:var(--pos);font-weight:700;}
+  .authcta{display:block;text-align:center;margin-bottom:12px;cursor:pointer;}
+  .authskip{display:block;width:100%;background:none;border:none;color:var(--muted);font-size:13px;
+    cursor:pointer;padding:6px;text-decoration:underline;}
+  .authskip:hover{color:var(--ink);}
   .methsheet{max-width:600px;text-align:left;padding:26px 26px 24px;max-height:86vh;overflow-y:auto;position:relative;}
   .methsheet h3{font-family:Newsreader,serif;font-size:24px;margin:0 30px 10px 0;}
   .methsheet>p{color:var(--muted);font-size:14px;line-height:1.6;margin:0 0 14px;}
@@ -572,6 +583,21 @@ export function renderDashboard(): string {
     <div class="wizsteps" id="wiz-steps"></div></div>
   <div class="wizbody" id="wiz-body"></div>
   <div class="wizfoot" id="wiz-foot"></div>
+</div></div>
+
+<div class="modal" id="authmodal"><div class="sheet authsheet">
+  <button class="close" id="authclose">×</button>
+  <div class="authic">🛰️</div>
+  <h3>Curate the Radar — don’t just watch it</h3>
+  <p class="authlede">You’re browsing anonymously. Connect with Telegram and your picks actually shape the monthly Radar. Under a minute, no password.</p>
+  <ul class="authbenefits">
+    <li><b>Your taste counts</b> — votes are attributed to your role &amp; focus and feed the published cut.</li>
+    <li><b>A minute a day, in chat</b> — get a couple of match-ups in Telegram; no need to keep the site open.</li>
+    <li><b>See where you rank</b> — a curator leaderboard tracks your contribution.</li>
+    <li><b>Any device, same you</b> — your identity &amp; history follow you everywhere.</li>
+  </ul>
+  <a class="btn authcta" id="authgo" href="https://t.me/lksbrssr_radar_bot?start=web" target="_blank" rel="noopener">Continue with Telegram →</a>
+  <button class="authskip" id="authskip">No thanks — keep browsing anonymously</button>
 </div></div>
 
 <script>
@@ -1003,6 +1029,20 @@ function voteCardHtml(slot, card, reigning, entering){
 var warnOpen=false;
 function openWarn(){ warnOpen=true; el('warnmodal').classList.add('open'); }
 function closeWarn(){ warnOpen=false; el('warnmodal').classList.remove('open'); }
+
+// ---- Telegram sign-in nudge (grow the curator base) ----
+// A one-time, dismissible prompt for anonymous web users to connect via
+// Telegram. Snoozed in localStorage so we nudge, not nag.
+function authSnoozed(){ try{ return Date.now() < (+localStorage.getItem('radar-tgnudge')||0); }catch(e){ return false; } }
+function snoozeAuth(days){ try{ localStorage.setItem('radar-tgnudge', String(Date.now()+days*864e5)); }catch(e){} }
+function closeAuthNudge(days){ if(days) snoozeAuth(days); var m=el('authmodal'); if(m) m.classList.remove('open'); }
+function maybeShowAuthNudge(){
+  if(web && web.linked) return;                       // already a Telegram curator
+  if(typeof admin!=='undefined' && admin.me) return;  // admins are authenticated
+  if(authSnoozed()) return;                           // recently dismissed
+  if(document.querySelector('.modal.open')) return;   // don't stack over another modal
+  var m=el('authmodal'); if(m) m.classList.add('open');
+}
 function updateStats(s){
   var p=el('vprog'); if(!p||!s) return; p.style.display='block';
   var lbl=el('vprogLabel'); if(!lbl) return;
@@ -1821,13 +1861,17 @@ el('modal').addEventListener('click',function(e){ if(e.target===el('modal')) clo
 el('warnclose').onclick=closeWarn;
 el('warngot').onclick=closeWarn;
 el('warnmodal').addEventListener('click',function(e){ if(e.target===el('warnmodal')) closeWarn(); });
+el('authclose').onclick=function(){ closeAuthNudge(7); };
+el('authskip').onclick=function(){ closeAuthNudge(7); };
+el('authgo').onclick=function(){ snoozeAuth(1); setTimeout(function(){ closeAuthNudge(0); }, 60); };
+el('authmodal').addEventListener('click',function(e){ if(e.target===el('authmodal')) closeAuthNudge(7); });
 // Methodology deep-dive modal.
 el('methclose').onclick=closeMeth;
 el('methmodal').addEventListener('click',function(e){ if(e.target===el('methmodal')) closeMeth(); });
 // Add-source/add-card wizard modal.
 el('wizclose').onclick=closeWiz;
 el('wizmodal').addEventListener('click',function(e){ if(e.target===el('wizmodal')) closeWiz(); });
-document.addEventListener('keydown',function(e){ if(e.key==='Escape'){ closeModal(); closeWarn(); closeWiz(); } });
+document.addEventListener('keydown',function(e){ if(e.key==='Escape'){ closeModal(); closeWarn(); closeWiz(); closeAuthNudge(7); } });
 
 // ---- Boot ----
 function render(){
@@ -1897,6 +1941,7 @@ Promise.all([getJSON('/api/editions.json'), getJSON('/api/overview.json')]).then
   claimMagic().then(function(){ return loginTok ? adminSignIn(loginTok) : initAdmin(); }).then(function(){
     if(landedAdmin){ try{ history.replaceState(null,'','#cards'); }catch(e){ location.hash='cards'; } }
     render();
+    setTimeout(maybeShowAuthNudge, 900);
   });
 });
 `
