@@ -820,11 +820,10 @@ function renderData(){
   // ---- curators table (unchanged) ----
   var curatorRows = ov.curatorList.map(function(c){
     var focus = (c.focus&&c.focus.length) ? c.focus.map(function(s){ return '<span class="chip"><i style="background:'+aColor(s)+'"></i>'+esc(aLabel(s))+'</span>'; }).join('') : '<span class="muted">all</span>';
-    var cad = (c.cadence&&c.cadence>0)?c.cadence+'/day':'surprise';
     var paused = c.status==='paused'?'<span class="pill">paused</span>':'';
     return '<tr><td>'+esc(c.first_name||'Curator')+' '+(c.username?'<span class="muted">@'+esc(c.username)+'</span>':'')+' '+paused+'</td>'+
       '<td class="muted">'+(c.role?esc(labelForRole(ov,c.role)):'—')+'</td><td>'+focus+'</td>'+
-      '<td><b>'+c.votes+'</b></td><td class="muted">'+cad+'</td></tr>';
+      '<td><b>'+c.votes+'</b></td></tr>';
   }).join('');
 
   v.innerHTML =
@@ -843,7 +842,7 @@ function renderData(){
     consensusHtml+
     sdHtml+
     '<h2 class="title" style="font-size:22px">Curators ('+ov.curators+')</h2>'+
-    (curatorRows?'<table><thead><tr><th>Curator</th><th>Role</th><th>Focus areas</th><th>Votes</th><th>Cadence</th></tr></thead><tbody>'+curatorRows+'</tbody></table>':'<div class="panel"><p class="muted">No curators yet.</p></div>');
+    (curatorRows?'<table><thead><tr><th>Curator</th><th>Role</th><th>Focus areas</th><th>Votes</th></tr></thead><tbody>'+curatorRows+'</tbody></table>':'<div class="panel"><p class="muted">No curators yet.</p></div>');
 
   var ss=el('selSeg'); if(ss) ss.addEventListener('change', function(e){ state.dataSeg=e.target.value; renderData(); });
 }

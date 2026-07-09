@@ -25,37 +25,22 @@ function truncate(s: string, n: number): string {
 }
 
 /** Short HTML caption with tappable links so curators can open the sources. */
-function caption(
-  top: Card,
-  bottom: Card,
-  index: number,
-  size: number,
-): string {
+function caption(top: Card, bottom: Card, index: number): string {
   return (
-    `<b>Match-up ${index} of ${size}</b> — tap the stronger signal. ` +
+    `<b>Match-up ${index}</b> — tap the stronger signal. ` +
     `👑 your pick stays put.\n\n` +
     `🅰 <a href="${top.href}">${escapeHtml(truncate(top.title, 90))}</a>\n` +
     `🅱 <a href="${bottom.href}">${escapeHtml(truncate(bottom.title, 90))}</a>`
   )
 }
 
-function roundSizeFor(curatorId: number): number {
-  const c = repo.getCurator(curatorId)
-  return c?.cadence && c.cadence > 0 ? c.cadence : config.roundSize
-}
-
 /** Render + send the current match-up as a fresh photo message. */
-async function sendMatchup(
-  ctx: Context,
-  s: SessionState,
-  index: number,
-  size: number,
-): Promise<void> {
+async function sendMatchup(ctx: Context, s: SessionState, index: number): Promise<void> {
   const top = repo.getCard(s.slotAId!)!
   const bottom = repo.getCard(s.slotBId!)!
   const png = await renderMatchup(top, bottom, s.championSlot ?? null)
   await ctx.replyWithPhoto(new InputFile(png), {
-    caption: caption(top, bottom, index, size),
+    caption: caption(top, bottom, index),
     parse_mode: 'HTML',
     reply_markup: kb.vote(),
   })
@@ -66,7 +51,6 @@ async function editMatchup(
   ctx: Context,
   s: SessionState,
   index: number,
-  size: number,
   withButtons = true,
   suffix = '',
 ): Promise<void> {
@@ -77,7 +61,7 @@ async function editMatchup(
     {
       type: 'photo',
       media: new InputFile(png),
-      caption: caption(top, bottom, index, size) + suffix,
+      caption: caption(top, bottom, index) + suffix,
       parse_mode: 'HTML',
     },
     withButtons ? { reply_markup: kb.vote() } : {},
@@ -92,8 +76,9 @@ export async function startRound(ctx: Context, curatorId: number): Promise<void>
     return
   }
   repo.touchCurator(curatorId)
-  const size = roundSizeFor(curatorId)
-  const roundId = repo.startRound(curatorId, size)
+  // Open-ended round: there's no fixed pair count any more — the curator votes
+  // as long as they like and taps ✓ Done when finished (size 0 = open).
+  const roundId = repo.startRound(curatorId, 0)
 
   const a = repo.pickChallenger(curatorId, null)!
   const b = repo.pickChallenger(curatorId, a.id)!
@@ -109,8 +94,8 @@ export async function startRound(ctx: Context, curatorId: number): Promise<void>
   }
   repo.setSession(curatorId, s)
 
-  await ctx.reply(copy.roundIntro(size), { parse_mode: 'HTML' })
-  await sendMatchup(ctx, s, 1, size)
+  await ctx.reply(copy.roundIntro(), { parse_mode: 'HTML' })
+  await sendMatchup(ctx, s, 1)
 }
 
 /** Handle every `vote:*` callback. Returns true if it consumed the callback. */
@@ -136,8 +121,20 @@ export async function handleVotingCallback(
     return true
   }
 
-  const size = roundSizeFor(from.id)
   const index = s.comparison ?? 1
+
+  // --- Done: the curator stops whenever they like. ---
+  if (action === 'done') {
+    repo.completeRound(s.roundId)
+    await ctx.editMessageReplyMarkup(undefined).catch(() => {})
+    repo.clearSession(from.id)
+    await ctx.reply(copy.roundComplete(s.cast ?? 0), {
+      parse_mode: 'HTML',
+      reply_markup: kb.another(),
+    })
+    await ctx.answerCallbackQuery({ text: '🎉 Thanks for voting!' }).catch(() => {})
+    return true
+  }
 
   // --- Skip: swap a new card into the non-reigning slot, no vote. ---
   if (action === 'skip') {
@@ -149,7 +146,7 @@ export async function handleVotingCallback(
       if (replaceSlot === 'a') s.slotAId = next.id
       else s.slotBId = next.id
       repo.setSession(from.id, s)
-      await editMatchup(ctx, s, index, size)
+      await editMatchup(ctx, s, index)
     }
     await ctx.answerCallbackQuery({ text: 'Skipped ⏭' }).catch(() => {})
     return true
@@ -185,26 +182,6 @@ export async function handleVotingCallback(
   s.reign = winnerSlot === s.championSlot ? (s.reign ?? 1) + 1 : 1
   s.championSlot = winnerSlot // the winner now reigns, in its current slot
 
-  // Round finished?
-  if (s.cast >= size) {
-    repo.completeRound(s.roundId)
-    await editMatchup(
-      ctx,
-      s,
-      index,
-      size,
-      false,
-      `\n\n<i>✔ You picked ${winnerSlot === 'a' ? '🅰' : '🅱'}</i>`,
-    )
-    repo.clearSession(from.id)
-    await ctx.reply(copy.roundComplete(s.cast), {
-      parse_mode: 'HTML',
-      reply_markup: kb.another(),
-    })
-    await ctx.answerCallbackQuery({ text: '🎉 Round complete!' }).catch(() => {})
-    return true
-  }
-
   // Exposure cap: once a card has defended reignCap times in a row, force it to
   // rotate out so it can't hog the comparison budget. Both slots get a fresh
   // card and nobody reigns — this spreads votes to late-added / mid-pack cards.
@@ -221,7 +198,7 @@ export async function handleVotingCallback(
       s.reign = 0
       s.comparison = index + 1
       repo.setSession(from.id, s)
-      await editMatchup(ctx, s, s.comparison, size)
+      await editMatchup(ctx, s, s.comparison)
       await ctx.answerCallbackQuery({ text: '🔁 Fresh pair — spreading the votes' }).catch(() => {})
       return true
     }
@@ -233,8 +210,11 @@ export async function handleVotingCallback(
   if (!challenger) {
     repo.completeRound(s.roundId)
     repo.clearSession(from.id)
-    await ctx.reply(copy.roundComplete(s.cast), { parse_mode: 'HTML' })
-    await ctx.answerCallbackQuery().catch(() => {})
+    await ctx.reply(copy.roundComplete(s.cast ?? 0), {
+      parse_mode: 'HTML',
+      reply_markup: kb.another(),
+    })
+    await ctx.answerCallbackQuery({ text: "That's the whole pool — nice work!" }).catch(() => {})
     return true
   }
   if (loserSlot === 'a') s.slotAId = challenger.id
@@ -242,7 +222,7 @@ export async function handleVotingCallback(
   s.comparison = index + 1
   repo.setSession(from.id, s)
 
-  await editMatchup(ctx, s, s.comparison, size)
+  await editMatchup(ctx, s, s.comparison)
   await ctx.answerCallbackQuery({ text: '👑 Your pick stays on!' }).catch(() => {})
   return true
 }

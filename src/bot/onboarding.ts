@@ -66,10 +66,15 @@ export async function handleOnboardingCallback(
     case 'focus': {
       if (arg === 'done') {
         repo.setFocusAreas(from.id, session.focus ?? [])
-        // Step 2 done → step 3 (cadence).
-        await ctx.editMessageText(copy.askCadence(), {
+        // Step 2 done → finished. There's no pair-count step any more (curators
+        // just vote as long as they like and tap Done).
+        repo.completeOnboarding(from.id)
+        repo.clearSession(from.id)
+        const curator = repo.getCurator(from.id)
+        const focusCount = repo.getFocusAreas(from.id).length
+        await ctx.editMessageText(copy.done(curator?.role ?? null, focusCount), {
           parse_mode: 'HTML',
-          reply_markup: kb.cadence(),
+          reply_markup: kb.begin(),
         })
       } else {
         // Toggle a focus area in place.
@@ -83,19 +88,6 @@ export async function handleOnboardingCallback(
           reply_markup: kb.focus(session.focus),
         })
       }
-      break
-    }
-
-    case 'cadence': {
-      repo.setCuratorCadence(from.id, Number(arg))
-      repo.completeOnboarding(from.id)
-      repo.clearSession(from.id)
-      const curator = repo.getCurator(from.id)
-      const focusCount = repo.getFocusAreas(from.id).length
-      await ctx.editMessageText(copy.done(curator?.role ?? null, focusCount), {
-        parse_mode: 'HTML',
-        reply_markup: kb.begin(),
-      })
       break
     }
 
