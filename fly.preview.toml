@@ -16,6 +16,11 @@ primary_region = "ord"
 [env]
   PORT = "3000"
   DATABASE_PATH = "/tmp/preview.sqlite"
+  # Demo admin for testing the admin panel on the (bot-less) preview. Safe: this
+  # entrypoint (dev/preview.js) is preview-only; production runs index.js and
+  # never sets PREVIEW_ADMIN_TOKEN. Open /#admin?t=<token> to sign in.
+  ADMIN_IDS = "999"
+  PREVIEW_ADMIN_TOKEN = "preview-admin-demo"
 
 # Override the image CMD: HTTP-only preview entrypoint, no bot.
 [processes]
