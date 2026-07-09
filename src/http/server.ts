@@ -868,8 +868,14 @@ export function createServer() {
     // Scope the whole analysis to one edition, or all-time (default). Everything
     // below — part-worths, per-segment fits, consensus, supply/demand — uses the
     // same scope so the numbers are consistent and the UI can label them.
+    // Two independent scopes: `edition` = the crowd-reward (vote) period that
+    // the part-worths are fit over (default all-time), and `pool` = which
+    // edition's card pool the supply/demand gap compares against (default the
+    // current edition). So you can ask e.g. "all-time demand vs the July pool".
     const q = (req.query.edition as string) || 'all'
     const edition = /^\d{4}-\d{2}$/.test(q) ? q : undefined
+    const pq = (req.query.pool as string) || ''
+    const pool = /^\d{4}-\d{2}$/.test(pq) ? pq : currentEdition()
     const feats = cardFeatureMap()
     const baseline = globalPartWorths(feats, edition)
     const roleFits: RoleFit[] = ROLES.map((r) => ({
@@ -880,6 +886,7 @@ export function createServer() {
     res.json({
       generatedAt: new Date().toISOString(),
       scope: edition || 'all',
+      pool,
       curators: repo.countCurators(),
       totalVotes: repo.totalVotes(),
       lenses: {
@@ -912,8 +919,9 @@ export function createServer() {
       },
       // View 3 — consensus vs contested cards.
       consensus: consensusContested(roleFits, feats, undefined, edition),
-      // View 4 — supply/demand gap (a sourcing instruction for ingestion).
-      supplyDemand: supplyDemandGap(baseline, feats, edition),
+      // View 4 — supply/demand gap: demand = part-worths over the reward period
+      // (baseline), supply = composition of the chosen pool edition.
+      supplyDemand: supplyDemandGap(baseline, feats, pool),
       // NB: the curator list (names/profiles) is intentionally NOT here — it's
       // admin-only now, served by /api/admin/curators.
     })
