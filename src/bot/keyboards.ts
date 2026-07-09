@@ -29,24 +29,19 @@ export const kb = {
     return k
   },
 
-  cadence: () =>
-    new InlineKeyboard()
-      .text('2 / day', 'ob:cadence:2')
-      .text('3 / day', 'ob:cadence:3')
-      .text('5 / day', 'ob:cadence:5')
-      .row()
-      .text('🎲 Surprise me', 'ob:cadence:0'),
-
   begin: () =>
     new InlineKeyboard().text('Start my first round ▶', 'ob:begin'),
 
-  /** The two-option vote plus a skip. Slot A is the (reigning) champion. */
+  /** The two-option vote, a skip, and a done. Slot A is the (reigning) champion.
+   *  There's no fixed round length — curators vote as long as they like and tap
+   *  ✓ Done to stop. */
   vote: () =>
     new InlineKeyboard()
       .text('🅰 This one', 'vote:a')
       .text('🅱 This one', 'vote:b')
       .row()
-      .text('⏭ Skip', 'vote:skip'),
+      .text('⏭ Skip', 'vote:skip')
+      .text('✓ Done', 'vote:done'),
 
   another: () =>
     new InlineKeyboard().text('▶ Another round', 'vote:again'),

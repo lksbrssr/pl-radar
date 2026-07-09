@@ -1,11 +1,12 @@
 /**
- * Daily nudge scheduler (optional).
+ * Weekly nudge scheduler (optional).
  *
- * If DAILY_NUDGE_HOUR (0–23, server time) is set, once a day at that hour we
- * ping every active, onboarded curator with a one-tap button to start their
- * round. Kept intentionally simple (no cron dep): we check every 5 minutes and
- * fire once per calendar day. Disabled entirely when the env var is unset, so
- * local development never spams anyone.
+ * If DAILY_NUDGE_HOUR (0–23, UTC) is set, once a week — on NUDGE_WEEKDAY
+ * (0=Sun…6=Sat, default Monday) at that hour — we ping every active, onboarded
+ * curator to start a round. Kept simple (no cron dep): we check every 5 minutes
+ * and fire once on the target weekday. The "help settle the cut" ask only goes
+ * out in the final week of the month; the rest of the month it's a light
+ * general reminder. Disabled when DAILY_NUDGE_HOUR is unset.
  */
 import type { Bot } from 'grammy'
 import db from './db/index.js'
@@ -37,38 +38,57 @@ function startIngestSchedule(): void {
 }
 
 export function startScheduler(bot: Bot): void {
-  // Background dedup/ingest runs regardless of the daily-nudge setting.
+  // Background dedup/ingest runs regardless of the nudge setting.
   startIngestSchedule()
 
   const hour = process.env.DAILY_NUDGE_HOUR
   if (hour === undefined || hour === '') {
-    console.log('[scheduler] DAILY_NUDGE_HOUR unset — daily nudges disabled')
+    console.log('[scheduler] DAILY_NUDGE_HOUR unset — weekly nudges disabled')
     return
   }
   const targetHour = Number(hour)
-  console.log(`[scheduler] daily nudges at ${targetHour}:00 server time`)
+  const targetWeekday = Number(process.env.NUDGE_WEEKDAY ?? 1) // 0=Sun..6=Sat
+  console.log(`[scheduler] weekly nudges on weekday ${targetWeekday} at ${targetHour}:00 UTC`)
 
   setInterval(
     async () => {
       const now = new Date()
       const day = now.toISOString().slice(0, 10)
-      if (now.getHours() !== targetHour || lastFiredDay === day) return
+      // Fires once: only on the target weekday + hour, guarded per calendar day.
+      if (
+        now.getUTCDay() !== targetWeekday ||
+        now.getUTCHours() !== targetHour ||
+        lastFiredDay === day
+      )
+        return
       lastFiredDay = day
-      await sendDailyNudges(bot)
+      await sendWeeklyNudges(bot)
     },
     5 * 60 * 1000,
   )
 }
 
+/** True in the final 7 days of the current month (UTC) — when the cut is about
+ *  to publish and settling it actually matters. */
+function isFinalWeekOfMonth(d = new Date()): boolean {
+  const daysInMonth = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate()
+  return daysInMonth - d.getUTCDate() <= 7
+}
+
 /**
- * Craft the nudge from the CURRENT state of the cut. If the top-5 boundary is
- * unresolved or cards are under-sampled, we say exactly how much signal is
- * still missing — turning the daily ping into a targeted "help us lock the
- * Radar" ask (the whole point of having curators on tap). If the cut is already
- * confident, we send a lighter touch.
+ * Craft the weekly nudge. For most of the month it's a light general reminder.
+ * Only in the FINAL WEEK — when the cut is about to publish — do we send the
+ * targeted "help us settle the cut" ask, saying exactly how much signal is still
+ * missing. So the settle push lands once, at month end, not every week.
  */
 function nudgeText(): string {
   const label = editionLabel(activeEdition())
+  if (!isFinalWeekOfMonth()) {
+    return (
+      `🔭 Your weekly PL R&D Radar match-ups are ready. ` +
+      `A quick /vote round shapes the ${label}.`
+    )
+  }
   try {
     const gap = coverageGaps(activeEdition())
     if (gap.needsVotes) {
@@ -77,17 +97,17 @@ function nudgeText(): string {
       if (gap.underSampled > 0)
         bits.push(`${gap.underSampled} card${gap.underSampled === 1 ? '' : 's'} still need more eyes`)
       return (
-        `🥊 The ${label} isn’t locked yet — ${bits.join(' and ')}. ` +
+        `⏳ Last week for the ${label}! It isn’t locked yet — ${bits.join(' and ')}. ` +
         `A quick /vote round now directly decides what ships.`
       )
     }
-    return `✅ The ${label} is looking solid. Want to stress-test it? Tap /vote.`
+    return `✅ Last week for the ${label} — it’s looking solid. Want to stress-test it? Tap /vote.`
   } catch {
-    return '🥊 Your daily match-ups are ready! Tap /vote to shape today’s Radar.'
+    return `⏳ Last week for the ${label}! Tap /vote to help settle what ships.`
   }
 }
 
-async function sendDailyNudges(bot: Bot): Promise<void> {
+async function sendWeeklyNudges(bot: Bot): Promise<void> {
   const curators = db
     .prepare(
       `SELECT id FROM curators

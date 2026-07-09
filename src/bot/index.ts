@@ -106,8 +106,8 @@ bot.on('message:text', async (ctx) => {
 export async function registerCommands(): Promise<void> {
   await bot.api.setMyCommands([
     { command: 'vote', description: 'Start a round of match-ups' },
-    { command: 'settings', description: 'Change role, focus & cadence' },
-    { command: 'pause', description: 'Pause daily nudges' },
+    { command: 'settings', description: 'Change role & focus areas' },
+    { command: 'pause', description: 'Pause weekly nudges' },
     { command: 'resume', description: 'Resume daily nudges' },
     { command: 'help', description: 'What can this bot do?' },
   ])
