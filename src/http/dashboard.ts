@@ -499,6 +499,13 @@ export function renderDashboard(): string {
      centers over the content area on desktop via left padding = sidebar width. */
   @media(min-width:721px){.modal{padding-left:256px;}}
   .sheet{background:var(--white);border-radius:20px;max-width:560px;width:100%;overflow-y:auto;max-height:90vh;box-shadow:0 30px 80px rgba(0,0,0,.4);}
+  /* Dark mode: the scrim dims the whole page toward black, so a sheet painted in
+     the page background (--white === #15171c) vanishes into it. Lift the sheet
+     onto a lighter elevated surface with a hairline border + stronger shadow so
+     it clearly reads as a pop-out. */
+  html.dark .modal{background:rgba(5,6,9,.74);}
+  html.dark .sheet{background:#22262f;border:1px solid #383f4d;
+    box-shadow:0 26px 80px rgba(0,0,0,.8),0 0 0 1px rgba(255,255,255,.03);}
   .sheet-media{aspect-ratio:16/9;position:relative;}
   .sheet-media img,.sheet-media .ph{width:100%;height:100%;object-fit:cover;}
   .sheet-body{padding:22px 24px 26px;}
