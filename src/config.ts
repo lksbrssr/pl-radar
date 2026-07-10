@@ -133,13 +133,3 @@ export function editionLabel(edition: string): string {
   const thisYear = new Date().getFullYear()
   return y === thisYear ? `${month} Radar` : `${month} ${y}`
 }
-
-/** Throw a friendly error if the bot token is missing (call before bot start). */
-export function requireBotToken(): string {
-  if (!config.botToken) {
-    throw new Error(
-      'Missing BOT_TOKEN. Copy .env.example to .env and paste your @BotFather token.',
-    )
-  }
-  return config.botToken
-}

@@ -11,8 +11,6 @@ export const FOCUS_AREAS = [
   { slug: 'protocol-labs', label: 'Protocol Labs', emoji: '🔷' },
 ] as const
 
-export type AreaSlug = (typeof FOCUS_AREAS)[number]['slug']
-
 /** Curator role segments (for the conjoint-style "who cares about what"). */
 export const ROLES = [
   { key: 'researcher', label: 'Researcher / Scientist', emoji: '🔬' },
@@ -23,8 +21,6 @@ export const ROLES = [
   { key: 'comms', label: 'Comms / Marketing', emoji: '📣' },
   { key: 'other', label: 'Something else', emoji: '✨' },
 ] as const
-
-export type RoleKey = (typeof ROLES)[number]['key']
 
 /**
  * Card ANGLES — the emotional/rhetorical hook that explains *why* a real signal

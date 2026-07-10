@@ -49,21 +49,6 @@ export function globalLeaderboard() {
   return rankCards(recomputeElo(votes, allCardIds()))
 }
 
-/** Elo leaderboard from votes cast by curators who follow a given focus area. */
-export function leaderboardForFocus(areaSlug: string) {
-  const votes = db
-    .prepare(
-      `SELECT v.winner_card_id, v.loser_card_id
-       FROM votes v
-       WHERE v.curator_id IN (
-         SELECT curator_id FROM curator_focus WHERE area_slug = ?
-       )
-       ORDER BY v.id`,
-    )
-    .all(areaSlug) as VoteRow[]
-  return rankCards(recomputeElo(votes, allCardIds()))
-}
-
 /**
  * A "lens" is a curator PROFILE — a set of attributes describing whose taste to
  * view the Radar through. It's a composite (role AND focus areas, AND any

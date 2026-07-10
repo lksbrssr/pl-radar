@@ -15,6 +15,7 @@
     "ingest": "tsx src/ingest/run.ts",
     "simulate": "tsx src/dev/simulate.ts",
     "dev:serve": "tsx src/dev/serve.ts",
+    "check:dedup": "tsx src/dev/checkDedup.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "DATABASE_PATH=$(mktemp -t plrd-test.XXXXXX.sqlite) node --import tsx --test src/**/*.test.ts"
   },
