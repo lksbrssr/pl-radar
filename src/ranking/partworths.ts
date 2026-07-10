@@ -36,7 +36,6 @@
  */
 import db from '../db/index.js'
 import { ANGLES, FOCUS_AREAS, ROLES } from '../types.js'
-import { currentEdition } from '../config.js'
 import { votesForProfile, votesForCurator, type Profile } from './segments.js'
 
 /** Below this many informing comparisons, an estimate is flagged low-confidence. */

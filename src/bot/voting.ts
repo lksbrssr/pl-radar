@@ -81,8 +81,8 @@ export async function startRound(ctx: Context, curatorId: number): Promise<void>
   // as long as they like and taps ✓ Done when finished (size 0 = open).
   const roundId = repo.startRound(curatorId, 0)
 
-  const a = repo.pickChallenger(curatorId, null)!
-  const b = repo.pickChallenger(curatorId, a.id)!
+  const a = repo.pickChallenger(null)!
+  const b = repo.pickChallenger(a.id)!
 
   const s: SessionState = {
     flow: 'voting',
@@ -142,7 +142,7 @@ export async function handleVotingCallback(
     // Replace slot B by default; if A reigns keep A, if B reigns replace A.
     const replaceSlot: 'a' | 'b' = s.championSlot === 'b' ? 'a' : 'b'
     const keepId = replaceSlot === 'a' ? s.slotBId! : s.slotAId!
-    const next = repo.pickChallenger(from.id, keepId)
+    const next = repo.pickChallenger(keepId)
     if (next) {
       if (replaceSlot === 'a') s.slotAId = next.id
       else s.slotBId = next.id
@@ -207,7 +207,7 @@ export async function handleVotingCallback(
   }
 
   // King of the hill: winner stays in its slot; challenger enters the loser's.
-  const challenger = repo.pickChallenger(from.id, winner.id)
+  const challenger = repo.pickChallenger(winner.id)
   if (!challenger) {
     repo.completeRound(s.roundId)
     repo.clearSession(from.id)

@@ -14,7 +14,7 @@
  *             rights listed in `curator_admin_rights`.
  */
 import type express from 'express'
-import { config, isAdmin as isRootAdmin } from '../config.js'
+import { isAdmin as isRootAdmin } from '../config.js'
 import * as repo from '../db/repo.js'
 
 /** All admin capabilities. Root admins implicitly hold all of these. */
@@ -96,9 +96,4 @@ export function requireAdmin(
   }
   res.locals.admin = ctx
   return ctx
-}
-
-/** Convenience: is the admin panel usable at all (any root admin configured)? */
-export function adminEnabled(): boolean {
-  return config.adminIds.length > 0
 }

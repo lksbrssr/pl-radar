@@ -279,14 +279,10 @@ export function recentVotes(limit = 20) {
 }
 
 /**
- * Pick a fresh challenger card that isn't `excludeId` and (where possible) the
- * curator hasn't seen recently. We bias toward cards with fewer matches so the
- * comparison budget spreads across the whole pool.
+ * Pick a fresh challenger card that isn't `excludeId`. We bias toward cards with
+ * fewer matches so the comparison budget spreads across the whole pool.
  */
-export function pickChallenger(
-  curatorId: number,
-  excludeId: number | null,
-): Card | undefined {
+export function pickChallenger(excludeId: number | null): Card | undefined {
   return db
     .prepare(
       `SELECT ${CARD_COLUMNS} FROM cards c
