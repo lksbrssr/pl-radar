@@ -76,8 +76,8 @@ export function renderDashboard(): string {
     align-items:center;justify-content:center;}
   .hamb:hover{background:var(--gray-50);}
   .side-foot{margin-top:auto;display:flex;flex-direction:column;gap:8px;}
-  .footdiv{border:none;border-top:1px solid var(--line);margin:4px 0 10px;width:100%;}
-  .authbox{display:flex;flex-direction:column;gap:2px;margin-bottom:4px;}
+  .footdiv{border:none;border-top:1px solid var(--line);margin:4px 12px 14px;width:auto;}
+  .authbox{display:flex;flex-direction:column;gap:10px;margin-bottom:4px;padding:0 12px;}
   .authbox-s{font-size:12.5px;font-weight:600;color:var(--ink);}
   .authbox-a{font-size:12px;}
   .setsheet{max-width:440px;padding:28px 26px 22px;position:relative;}
