@@ -133,14 +133,34 @@ export function renderDashboard(): string {
     border-radius:999px;padding:9px 34px 9px 15px;font-size:14px;cursor:pointer;
     background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%235f6270' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
     background-repeat:no-repeat;background-position:right 13px center;}
-  input[type="month"]{background:var(--white);color:var(--ink);border:1px solid var(--line);
-    border-radius:999px;padding:9px 16px;font-size:14px;font-weight:500;cursor:pointer;font-family:inherit;
-    min-width:148px;transition:border-color .12s,box-shadow .12s;}
-  input[type="month"]:hover{border-color:var(--muted);}
-  input[type="month"]:focus{outline:none;border-color:var(--ink);box-shadow:0 0 0 3px rgba(57,102,254,.14);}
-  input[type="month"]::-webkit-calendar-picker-indicator{opacity:.5;cursor:pointer;transition:opacity .12s;}
-  input[type="month"]:hover::-webkit-calendar-picker-indicator{opacity:.85;}
-  html.dark input[type="month"]::-webkit-calendar-picker-indicator{filter:invert(0.8);}
+  /* custom month picker */
+  .mpick{position:relative;display:inline-block;}
+  .mpick-trigger{display:inline-flex;align-items:center;justify-content:space-between;gap:12px;
+    background:var(--white);color:var(--ink);border:1px solid var(--line);border-radius:999px;
+    padding:9px 16px;font-size:14px;font-weight:500;cursor:pointer;font-family:inherit;text-align:left;
+    min-width:170px;transition:border-color .12s,box-shadow .12s;}
+  .mpick-trigger:hover{border-color:var(--muted);}
+  .mpick.open .mpick-trigger,.mpick-trigger:focus-visible{outline:none;border-color:var(--ink);box-shadow:0 0 0 3px rgba(57,102,254,.14);}
+  .mpick-ic{display:inline-flex;align-items:center;color:var(--muted);opacity:.65;transition:opacity .12s;}
+  .mpick-trigger:hover .mpick-ic,.mpick.open .mpick-ic{opacity:1;}
+  .mpick-pop{position:absolute;top:calc(100% + 8px);left:0;z-index:70;min-width:280px;
+    background:var(--white);border:1px solid var(--line);border-radius:16px;
+    box-shadow:0 12px 34px rgba(15,17,21,.16);padding:14px;
+    opacity:0;transform:translateY(-6px);pointer-events:none;transition:opacity .14s,transform .14s;}
+  .mpick.open .mpick-pop{opacity:1;transform:none;pointer-events:auto;}
+  .mpick-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;padding:0 2px;}
+  .mpick-year{font-family:Newsreader,serif;font-size:21px;font-weight:500;color:var(--ink);}
+  .mpick-nav{width:32px;height:32px;border-radius:999px;border:1px solid var(--line);background:var(--white);
+    color:var(--blue);cursor:pointer;display:flex;align-items:center;justify-content:center;
+    transition:border-color .12s,background .12s;}
+  .mpick-nav:hover:not(:disabled){border-color:var(--muted);background:var(--gray-50);}
+  .mpick-nav:disabled{opacity:.3;cursor:default;}
+  .mpick-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;}
+  .mpick-m{border:none;background:none;color:var(--ink);font-family:inherit;font-size:13.5px;
+    padding:10px 0;border-radius:10px;cursor:pointer;transition:background .12s,color .12s;}
+  .mpick-m:hover:not(:disabled){background:var(--gray-100);}
+  .mpick-m.sel{background:var(--ink);color:var(--white);font-weight:600;}
+  .mpick-m:disabled{opacity:.28;cursor:default;}
   .searchbox{background:var(--white);color:var(--ink);border:1px solid var(--line);border-radius:999px;
     padding:9px 16px;font-size:14px;font-family:inherit;width:100%;}
   .searchbox:focus{outline:none;border-color:var(--muted);}
@@ -663,6 +683,64 @@ var CTA = { Talk:'Watch the talk', Podcast:'Listen now', Publication:'Read the p
 function area(s){ return AREA[s]||AREA.default; }
 function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function el(id){ return document.getElementById(id); }
+// ---- Custom month picker (click anywhere on the field to open) ----
+var MONABBR=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+var MP_CAL='<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="17" rx="2.5"/><path d="M16 2.5v4M8 2.5v4M3 9.5h18"/></svg>';
+var MP_L='<svg width="11" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M15.5 4l-8 8 8 8z"/></svg>';
+var MP_R='<svg width="11" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M8.5 4l8 8-8 8z"/></svg>';
+function mpParse(s){ var p=/^(\d{4})-(\d{2})$/.exec(s||''); return p?{y:+p[1],m:+p[2]}:null; }
+function mpKey(y,m){ return y+'-'+('0'+m).slice(-2); }
+function monthPickerHTML(id, value, min, max){
+  return '<div class="mpick" id="'+id+'" data-value="'+esc(value)+'" data-min="'+esc(min)+'" data-max="'+esc(max)+'">'+
+    '<button type="button" class="mpick-trigger" aria-haspopup="dialog" aria-expanded="false">'+
+      '<span class="mpick-val"></span>'+
+      '<span class="mpick-ic">'+MP_CAL+'</span>'+
+    '</button>'+
+    '<div class="mpick-pop" role="dialog" aria-label="Choose a month"></div>'+
+  '</div>';
+}
+function initMonthPicker(id, onChange){
+  var root=el(id); if(!root) return;
+  var trigger=root.querySelector('.mpick-trigger');
+  var pop=root.querySelector('.mpick-pop');
+  var valEl=root.querySelector('.mpick-val');
+  var min=mpParse(root.getAttribute('data-min'));
+  var max=mpParse(root.getAttribute('data-max'));
+  var cur=mpParse(root.getAttribute('data-value'));
+  var viewY=cur?cur.y:(new Date()).getFullYear();
+  function inRange(y,m){ var k=y*12+(m-1);
+    if(min&&k<min.y*12+(min.m-1)) return false;
+    if(max&&k>max.y*12+(max.m-1)) return false; return true; }
+  function label(){ var v=mpParse(root.getAttribute('data-value'));
+    valEl.textContent=v?(MONTHS[v.m-1]+' '+v.y):'Select a month'; }
+  function draw(){
+    var sel=mpParse(root.getAttribute('data-value'));
+    var prevOK=!min||viewY>min.y, nextOK=!max||viewY<max.y;
+    var h='<div class="mpick-head">'+
+      '<button type="button" class="mpick-nav" data-dir="-1"'+(prevOK?'':' disabled')+' aria-label="Previous year">'+MP_L+'</button>'+
+      '<span class="mpick-year">'+viewY+'</span>'+
+      '<button type="button" class="mpick-nav" data-dir="1"'+(nextOK?'':' disabled')+' aria-label="Next year">'+MP_R+'</button>'+
+    '</div><div class="mpick-grid">';
+    for(var m=1;m<=12;m++){ var ok=inRange(viewY,m), isSel=sel&&sel.y===viewY&&sel.m===m;
+      h+='<button type="button" class="mpick-m'+(isSel?' sel':'')+'" data-m="'+m+'"'+(ok?'':' disabled')+'>'+MONABBR[m-1]+'</button>'; }
+    pop.innerHTML=h+'</div>';
+    pop.querySelectorAll('.mpick-nav').forEach(function(b){ b.addEventListener('click',function(e){
+      e.stopPropagation(); if(b.disabled) return; viewY+=(+b.getAttribute('data-dir')); draw(); }); });
+    pop.querySelectorAll('.mpick-m').forEach(function(b){ b.addEventListener('click',function(e){
+      e.stopPropagation(); if(b.disabled) return; var v=mpKey(viewY,+b.getAttribute('data-m'));
+      root.setAttribute('data-value',v); label(); close(); if(onChange) onChange(v); }); });
+  }
+  function outside(e){ if(!root.contains(e.target)) close(); }
+  function onKey(e){ if(e.key==='Escape') close(); }
+  function open(){ var v=mpParse(root.getAttribute('data-value')); if(v) viewY=v.y; draw();
+    root.classList.add('open'); trigger.setAttribute('aria-expanded','true');
+    document.addEventListener('mousedown',outside); document.addEventListener('keydown',onKey); }
+  function close(){ root.classList.remove('open'); trigger.setAttribute('aria-expanded','false');
+    document.removeEventListener('mousedown',outside); document.removeEventListener('keydown',onKey); }
+  trigger.addEventListener('click',function(e){ e.stopPropagation();
+    if(root.classList.contains('open')) close(); else open(); });
+  label();
+}
 var TG='https://t.me/'+(window.BOT_USERNAME||'pl_radar_bot');
 function getJSON(u){ return fetch(u).then(function(r){ return r.json(); }); }
 // Focus-area icons matching plrd.org/about (self-hosted, tinted via CSS mask).
@@ -749,14 +827,14 @@ function renderRadar(){
     '<h2 class="title">Radar</h2>'+
     '<p class="lead">A one-minute swipe through the strongest signals across PL R&amp;D, as chosen by the crowd.</p>'+
     '<div class="controls">'+
-      '<div class="field"><label>Month</label><input type="month" id="selMonth" value="'+esc(state.edition)+'" min="'+esc(oldest)+'" max="'+esc(newest)+'"></div>'+
+      '<div class="field"><label>Month</label>'+monthPickerHTML('selMonth',state.edition,oldest,newest)+'</div>'+
     '</div>'+
     '<p class="lead" style="margin-top:-6px">Coming soon — filter the Radar for what people with a given profile (role &amp; interests) surfaced.</p>'+
     cutToggle()+
     '<div id="radarMount"></div>'+
     '<p class="lead" style="margin-top:14px">Showing the top '+((state.radar&&state.radar.items.length)||0)+' of '+((state.radar&&state.radar.poolSize)||0)+' candidates'+(curEd.current?' still in the running this month.':' from that edition.')+'</p>'+
     cutNote();
-  el('selMonth').addEventListener('change', function(e){ if(e.target.value){ state.edition=e.target.value; loadRadar(); } });
+  initMonthPicker('selMonth', function(v){ state.edition=v; loadRadar(); });
   v.querySelectorAll('[data-cut]').forEach(function(b){ b.addEventListener('click', function(){ state.radarCut=b.getAttribute('data-cut'); applyRadarCut(); renderRadar(); }); });
   mountCarousel();
 }
@@ -1263,14 +1341,14 @@ function renderCards(){
     '<h2 class="title">Cards</h2>'+
     '<p class="lead" id="cardsLead">Every candidate competing for this edition\'s Radar.</p>'+
     '<div class="controls cardctrls"><div class="field"><label>Month</label>'+
-      '<input type="month" id="cMonth" value="'+esc(state.edition)+'" min="'+esc(oldest)+'" max="'+esc(newest)+'"></div>'+
+      monthPickerHTML('cMonth',state.edition,oldest,newest)+'</div>'+
       '<div class="field searchfield"><label>Search</label>'+
         '<input type="text" id="cSearch" class="searchbox" placeholder="Search cards by keyword…" value="'+esc(state.cardSearch||'')+'"></div>'+
       '<div class="field"><label>&nbsp;</label>'+
         '<button class="btn" id="cAdd" style="cursor:pointer;border:none;white-space:nowrap">Add a card</button></div>'+
     '</div>'+
     '<div id="cardsMount"><div class="loading">Loading cards…</div></div>';
-  el('cMonth').addEventListener('change', function(e){ if(e.target.value){ state.edition=e.target.value; state.cardsData=null; state.hiddenData=null; loadCards(); } });
+  initMonthPicker('cMonth', function(v){ state.edition=v; state.cardsData=null; state.hiddenData=null; loadCards(); });
   el('cSearch').addEventListener('input', function(e){ state.cardSearch=e.target.value; renderCardsGrid(); });
   el('cAdd').addEventListener('click', function(){ openWiz(); });
   var ht=el('cHiddenToggle'); if(ht) ht.addEventListener('click', function(){ state.showHidden=!state.showHidden; renderCards(); });
