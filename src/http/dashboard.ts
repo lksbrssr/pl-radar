@@ -1570,10 +1570,7 @@ function loadSubmitStatus(){
   return getJSON('/api/submit/status').then(function(s){ SUBMIT={checked:true,enabled:!!s.enabled,ai:!!s.ai}; })
     .catch(function(){ SUBMIT={checked:true,enabled:false,ai:false}; });
 }
-// The passphrase that lets this browser spend AI tokens (stored locally only).
-var submitKey=''; try{ submitKey=localStorage.getItem('radar-submitkey')||''; }catch(e){}
-function saveSubmitKey(k){ submitKey=k; try{ if(k) localStorage.setItem('radar-submitkey',k); else localStorage.removeItem('radar-submitkey'); }catch(e){} }
-function authHeaders(){ var h={'Content-Type':'application/json'}; if(submitKey) h['x-submit-key']=submitKey; return h; }
+function authHeaders(){ return {'Content-Type':'application/json'}; }
 function submitPost(path, body){
   return fetch(path,{method:'POST',headers:authHeaders(),body:JSON.stringify(body||{})}).then(function(r){
     return r.json().then(function(j){ return {status:r.status, body:j}; }, function(){ return {status:r.status, body:{}}; });
@@ -1603,20 +1600,9 @@ function errHtml(){ return wiz.err?'<div class="errbox">'+esc(wiz.err)+'</div>':
 function renderWiz(){
   if(wiz.path==='admin-edit'){ renderAdminEditCard(); return; }
   if(!SUBMIT.checked){ setWiz('Add to the Radar','Loading\u2026','<div class="parsing"><span class="spin"></span>Getting things ready\u2026</div>',''); return; }
-  if(SUBMIT.enabled && !submitKey){ renderUnlock(); return; }
   if(wiz.path===null){ renderWizChoice(); return; }
   if(wiz.path==='card'){ renderCard(); return; }
   renderSource();
-}
-
-function renderUnlock(){
-  setWiz('Unlock submissions','A passphrase is needed to use the AI',
-    '<p class="subnote">Pasting a URL for the AI to read spends API tokens, so this instance is passphrase-gated. Enter the passphrase your admin shared \u2014 it stays in this browser only.</p>'+
-    '<div class="field"><label>Passphrase</label><input id="w-key" type="password" placeholder="\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"></div>'+
-    errHtml(),
-    '<span class="muted" style="font-size:12.5px">Don\'t have one? Ask a maintainer.</span><button class="btn" id="w-unlock">Unlock \u2192</button>');
-  el('w-key').addEventListener('keydown',function(e){ if(e.key==='Enter') el('w-unlock').click(); });
-  el('w-unlock').onclick=function(){ var k=el('w-key').value.trim(); if(!k) return; saveSubmitKey(k); wiz.err=''; renderWiz(); };
 }
 
 function renderWizChoice(){
@@ -1717,7 +1703,7 @@ function doParseCard(){
   wiz.data.href=url; wiz.err='';
   setWiz('Reading the page\u2026','AI is drafting your card','<div class="parsing"><span class="spin"></span>Fetching and analyzing '+esc(url.slice(0,64))+'\u2026</div>','');
   submitPost('/api/submit/parse',{url:url}).then(function(r){
-    if(r.status===401){ saveSubmitKey(''); wiz.err='That passphrase was rejected \u2014 enter it again.'; renderWiz(); return; }
+    if(r.status===503){ wiz.err='Submissions are turned off on this instance.'; renderWiz(); return; }
     var j=r.body||{};
     if(j.ok){
       var d=j.draft;
@@ -1760,7 +1746,7 @@ function doSubmitCard(){
   if(!d.title || !/^https?:\/\//i.test(d.href) || !d.area){ wiz.err='A title, a valid URL and a focus area are required.'; renderWiz(); return; }
   wiz.err=''; var ab=el('w-add'); if(ab){ ab.disabled=true; ab.textContent='Adding\u2026'; }
   submitPost('/api/submit/card',{title:d.title,href:d.href,description:d.description,areaSlug:d.area,type:d.type,source:d.source,angle:d.angle,image:d.image}).then(function(r){
-    if(r.status===401){ saveSubmitKey(''); wiz.err='Passphrase rejected \u2014 re-enter it.'; renderWiz(); return; }
+    if(r.status===503){ wiz.err='Submissions are turned off on this instance.'; renderWiz(); return; }
     var j=r.body||{};
     if(j.ok){ wiz.result=j.card; wiz.view='success'; renderWiz(); return; }
     if(j.reason==='duplicate'){ wiz.dedup=j.duplicate; wiz.view='duplicate'; renderWiz(); return; }
@@ -1867,7 +1853,7 @@ function doSubmitSource(){
   if(!d.name || !/^https?:\/\//i.test(d.feedUrl)){ wiz.err='A name and a valid feed URL are required.'; renderWiz(); return; }
   wiz.err=''; var ab=el('w-add'); if(ab){ ab.disabled=true; ab.textContent='Adding\u2026'; }
   submitPost('/api/submit/source',{name:d.name,description:d.srcDesc,feedUrl:d.feedUrl,homepage:d.homepage,areaSlug:d.srcArea}).then(function(r){
-    if(r.status===401){ saveSubmitKey(''); wiz.err='Passphrase rejected \u2014 re-enter it.'; renderWiz(); return; }
+    if(r.status===503){ wiz.err='Submissions are turned off on this instance.'; renderWiz(); return; }
     var j=r.body||{};
     if(j.ok){ wiz.result=j.source; wiz.ingest=j.ingest||null; wiz.ingestError=j.ingestError||null; wiz.view='success'; renderWiz(); return; }
     if(j.reason==='duplicate'){ wiz.dedup=j.duplicate; renderWiz(); return; }

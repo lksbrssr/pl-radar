@@ -400,17 +400,13 @@ export function createServer() {
     res.json({ enabled: submitEnabled(), ai: aiAvailable() })
   })
 
-  // Shared gate: every token-burning / write endpoint below requires the
-  // x-submit-key header to match SUBMIT_KEY. Returns false + a response when it
+  // Shared gate: every token-burning / write endpoint below is only available
+  // when the submission surface is turned on (SUBMIT_KEY set = on/off switch).
+  // No per-user passphrase is required. Returns false + a response when it
   // fails so callers can early-return.
-  function guard(req: express.Request, res: express.Response): boolean {
+  function guard(_req: express.Request, res: express.Response): boolean {
     if (!submitEnabled()) {
       res.status(503).json({ ok: false, reason: 'disabled' })
-      return false
-    }
-    const key = req.get('x-submit-key') || ''
-    if (key !== config.submitKey) {
-      res.status(401).json({ ok: false, reason: 'unauthorized' })
       return false
     }
     return true

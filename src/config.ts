@@ -60,11 +60,11 @@ export const config = {
    *  Set INGEST_INTERVAL_HOURS=0 to disable. Only runs in the full (bot) process. */
   ingestIntervalHours: Number(process.env.INGEST_INTERVAL_HOURS ?? 3),
 
-  /** Shared passphrase that gates the AI-powered submission endpoints (paste a
-   *  URL → an LLM turns it into a card; add a recurring source). Empty = the
-   *  whole submission surface is DISABLED, so the site never burns AI tokens.
-   *  Set it so only people you trust can trigger the model. The browser sends
-   *  it as the `x-submit-key` header after the user unlocks the submit panel. */
+  /** On/off switch for the AI-powered submission surface (paste a URL → an LLM
+   *  turns it into a card; add a recurring source). Empty = the whole submission
+   *  surface is DISABLED, so the site never burns AI tokens. Any non-empty value
+   *  turns it ON for everyone — there is no per-user passphrase to enter. Only
+   *  enable it where you're comfortable with visitors triggering the model. */
   submitKey: process.env.SUBMIT_KEY || '',
 
   /** LLM used to parse a pasted URL into a card/source draft. Auto-detects the
