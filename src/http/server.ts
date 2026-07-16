@@ -400,21 +400,66 @@ export function createServer() {
     res.json({ enabled: submitEnabled(), ai: aiAvailable() })
   })
 
-  // Shared gate: every token-burning / write endpoint below requires the
-  // x-submit-key header to match SUBMIT_KEY. Returns false + a response when it
+  // Shared gate: every token-burning / write endpoint below is only available
+  // when the submission surface is turned on (SUBMIT_KEY set = on/off switch).
+  // No per-user passphrase is required. Returns false + a response when it
   // fails so callers can early-return.
-  function guard(req: express.Request, res: express.Response): boolean {
+  function guard(_req: express.Request, res: express.Response): boolean {
     if (!submitEnabled()) {
       res.status(503).json({ ok: false, reason: 'disabled' })
       return false
     }
-    const key = req.get('x-submit-key') || ''
-    if (key !== config.submitKey) {
-      res.status(401).json({ ok: false, reason: 'unauthorized' })
-      return false
-    }
     return true
   }
+
+  // Best-effort client IP. No `trust proxy` is set, so read the forwarding
+  // headers Fly/most proxies send, falling back to the socket address.
+  function clientIp(req: express.Request): string {
+    const fly = req.get('fly-client-ip')
+    if (fly) return fly.trim()
+    const xff = req.get('x-forwarded-for')
+    if (xff) return xff.split(',')[0]!.trim()
+    return req.ip || req.socket.remoteAddress || 'unknown'
+  }
+
+  // Tiny in-memory fixed-window rate limiter keyed by bucket + client IP. This
+  // replaces the old per-user passphrase as the abuse brake on the now-open
+  // submission surface: token-burning parse endpoints get a tight budget, plain
+  // writes a looser one. State is per-process (fine for a single instance) and
+  // self-evicts once a window lapses. Returns false + a 429 when exhausted.
+  const rlHits = new Map<string, { count: number; resetAt: number }>()
+  function rateLimit(
+    req: express.Request,
+    res: express.Response,
+    bucket: string,
+    limit: number,
+    windowMs: number,
+  ): boolean {
+    const now = Date.now()
+    const key = `${bucket}:${clientIp(req)}`
+    const cur = rlHits.get(key)
+    if (!cur || now >= cur.resetAt) {
+      rlHits.set(key, { count: 1, resetAt: now + windowMs })
+      return true
+    }
+    if (cur.count >= limit) {
+      const retryAfter = Math.ceil((cur.resetAt - now) / 1000)
+      res.set('Retry-After', String(retryAfter))
+      res.status(429).json({ ok: false, reason: 'rate-limited', retryAfter })
+      return false
+    }
+    cur.count++
+    return true
+  }
+
+  // Occasionally sweep expired buckets so the map can't grow unbounded.
+  setInterval(() => {
+    const now = Date.now()
+    for (const [k, v] of rlHits) if (now >= v.resetAt) rlHits.delete(k)
+  }, 10 * 60_000).unref()
+
+  const RL_PARSE = { limit: 8, windowMs: 10 * 60_000 } // token-burning: 8 / 10 min
+  const RL_WRITE = { limit: 20, windowMs: 10 * 60_000 } // writes: 20 / 10 min
 
   function dupPayload(hit: NonNullable<ReturnType<typeof findDuplicate>>) {
     const c = hit.card
@@ -438,6 +483,7 @@ export function createServer() {
   // path only when appropriate (fetch/ai failures), not on a duplicate.
   app.post('/api/submit/parse', async (req, res) => {
     if (!guard(req, res)) return
+    if (!rateLimit(req, res, 'parse', RL_PARSE.limit, RL_PARSE.windowMs)) return
     const url = String((req.body ?? {}).url || '').trim()
     if (!/^https?:\/\/\S+$/i.test(url)) {
       return res.status(400).json({ ok: false, reason: 'bad-url' })
@@ -463,6 +509,7 @@ export function createServer() {
   // so the UI can link to it. Otherwise files it into the open edition.
   app.post('/api/submit/card', (req, res) => {
     if (!guard(req, res)) return
+    if (!rateLimit(req, res, 'write', RL_WRITE.limit, RL_WRITE.windowMs)) return
     const b = req.body ?? {}
     const title = String(b.title || '').trim()
     const href = String(b.href || '').trim()
@@ -505,6 +552,7 @@ export function createServer() {
   // fallback here (by design): if we can't find a usable feed we just say so.
   app.post('/api/submit/source/parse', async (req, res) => {
     if (!guard(req, res)) return
+    if (!rateLimit(req, res, 'parse', RL_PARSE.limit, RL_PARSE.windowMs)) return
     const url = String((req.body ?? {}).url || '').trim()
     if (!/^https?:\/\/\S+$/i.test(url)) {
       return res.status(400).json({ ok: false, reason: 'bad-url' })
@@ -536,6 +584,7 @@ export function createServer() {
   // its interval to pick up future posts — no code PR, no restart.
   app.post('/api/submit/source', async (req, res) => {
     if (!guard(req, res)) return
+    if (!rateLimit(req, res, 'write', RL_WRITE.limit, RL_WRITE.windowMs)) return
     const b = req.body ?? {}
     const name = String(b.name || '').trim()
     const feedUrl = String(b.feedUrl || '').trim()
