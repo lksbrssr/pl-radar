@@ -63,7 +63,8 @@ export const config = {
   /** On/off switch for the AI-powered submission surface (paste a URL → an LLM
    *  turns it into a card; add a recurring source). Empty = the whole submission
    *  surface is DISABLED, so the site never burns AI tokens. Any non-empty value
-   *  turns it ON for everyone — there is no per-user passphrase to enter. Only
+   *  turns it ON for everyone — there is no per-user passphrase to enter; abuse
+   *  is limited by per-IP rate limits on the submit endpoints instead. Only
    *  enable it where you're comfortable with visitors triggering the model. */
   submitKey: process.env.SUBMIT_KEY || '',
 

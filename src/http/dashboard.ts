@@ -1704,6 +1704,7 @@ function doParseCard(){
   setWiz('Reading the page\u2026','AI is drafting your card','<div class="parsing"><span class="spin"></span>Fetching and analyzing '+esc(url.slice(0,64))+'\u2026</div>','');
   submitPost('/api/submit/parse',{url:url}).then(function(r){
     if(r.status===503){ wiz.err='Submissions are turned off on this instance.'; renderWiz(); return; }
+    if(r.status===429){ wiz.err='Too many submissions right now \u2014 please wait a few minutes and try again.'; renderWiz(); return; }
     var j=r.body||{};
     if(j.ok){
       var d=j.draft;
@@ -1747,6 +1748,7 @@ function doSubmitCard(){
   wiz.err=''; var ab=el('w-add'); if(ab){ ab.disabled=true; ab.textContent='Adding\u2026'; }
   submitPost('/api/submit/card',{title:d.title,href:d.href,description:d.description,areaSlug:d.area,type:d.type,source:d.source,angle:d.angle,image:d.image}).then(function(r){
     if(r.status===503){ wiz.err='Submissions are turned off on this instance.'; renderWiz(); return; }
+    if(r.status===429){ wiz.err='Too many submissions right now \u2014 please wait a few minutes and try again.'; renderWiz(); return; }
     var j=r.body||{};
     if(j.ok){ wiz.result=j.card; wiz.view='success'; renderWiz(); return; }
     if(j.reason==='duplicate'){ wiz.dedup=j.duplicate; wiz.view='duplicate'; renderWiz(); return; }
@@ -1813,7 +1815,8 @@ function doParseSource(){
   wiz.data.feedUrl=url; wiz.err='';
   setWiz('Finding the feed\u2026','Reading the site','<div class="parsing"><span class="spin"></span>Looking for a feed at '+esc(url.slice(0,64))+'\u2026</div>','');
   submitPost('/api/submit/source/parse',{url:url}).then(function(r){
-    if(r.status===401){ saveSubmitKey(''); wiz.err='Passphrase rejected \u2014 re-enter it.'; renderWiz(); return; }
+    if(r.status===503){ wiz.err='Submissions are turned off on this instance.'; renderWiz(); return; }
+    if(r.status===429){ wiz.err='Too many submissions right now \u2014 please wait a few minutes and try again.'; renderWiz(); return; }
     var j=r.body||{};
     if(j.ok){
       var d=j.draft;
@@ -1854,6 +1857,7 @@ function doSubmitSource(){
   wiz.err=''; var ab=el('w-add'); if(ab){ ab.disabled=true; ab.textContent='Adding\u2026'; }
   submitPost('/api/submit/source',{name:d.name,description:d.srcDesc,feedUrl:d.feedUrl,homepage:d.homepage,areaSlug:d.srcArea}).then(function(r){
     if(r.status===503){ wiz.err='Submissions are turned off on this instance.'; renderWiz(); return; }
+    if(r.status===429){ wiz.err='Too many submissions right now \u2014 please wait a few minutes and try again.'; renderWiz(); return; }
     var j=r.body||{};
     if(j.ok){ wiz.result=j.source; wiz.ingest=j.ingest||null; wiz.ingestError=j.ingestError||null; wiz.view='success'; renderWiz(); return; }
     if(j.reason==='duplicate'){ wiz.dedup=j.duplicate; renderWiz(); return; }
