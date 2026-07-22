@@ -45,6 +45,23 @@ function absolute(src: string, base: string): string | null {
 const JUNK =
   /(logo|icon|favicon|sprite|avatar|participant|headshot|placeholder|spacer|pixel|1x1|blank|badge|emoji)/i
 
+// Site-wide generic share cards. These load fine (so `isValidImage` passes) but
+// carry no per-item signal — they're the same neutral PL logo card on every
+// page. We treat them as replaceable: prefer any real hero (e.g. an embedded
+// video thumbnail) and only keep the generic card as a last resort.
+const GENERIC_SHARE =
+  /(pl_research_card|plneuro-share-image|pl[-_]?share|default[-_]?share|og[-_]?default|share[-_]?image)/i
+
+/** YouTube video ids referenced by embeds/links in a page's HTML, first-seen. */
+function youtubeIdsInHtml(html: string): string[] {
+  const re =
+    /(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?[^"'&]*\bv=|embed\/|shorts\/)|ytimg\.com\/vi\/)([A-Za-z0-9_-]{11})/gi
+  const seen: string[] = []
+  let m: RegExpExecArray | null
+  while ((m = re.exec(html))) if (!seen.includes(m[1]!)) seen.push(m[1]!)
+  return seen
+}
+
 /** First `<meta property|name="key" content="…">` value. */
 function metaContent(html: string, key: string): string | null {
   const patterns = [
@@ -103,7 +120,16 @@ export async function heroImagesFromPage(pageUrl: string): Promise<string[]> {
   const push = (src?: string | null) => {
     if (!src) return
     const abs = absolute(decode(src), finalUrl)
-    if (abs && !out.includes(abs)) out.push(abs)
+    // Never promote a site-wide generic share card as a "real" hero.
+    if (abs && !GENERIC_SHARE.test(abs) && !out.includes(abs)) out.push(abs)
+  }
+
+  // 0. Embedded video (talks/podcasts): the video thumbnail is the real hero,
+  //    even when the page's og:image is only a generic share card. maxres first
+  //    (nicer), hqdefault as the guaranteed-to-exist fallback.
+  for (const id of youtubeIdsInHtml(html)) {
+    push(`https://i.ytimg.com/vi/${id}/maxresdefault.jpg`)
+    push(`https://i.ytimg.com/vi/${id}/hqdefault.jpg`)
   }
 
   // 1. Social / OG images (highest intent).
@@ -148,7 +174,10 @@ export async function resolveCardImage(input: {
   href?: string | null
 }): Promise<string | null> {
   const current = input.image || null
-  if (current && (await isValidImage(current))) return current
+  const currentIsGeneric = current ? GENERIC_SHARE.test(current) : false
+  // A real, per-item image that still loads is always kept. A generic share
+  // card is only kept if we can't find something better below.
+  if (current && !currentIsGeneric && (await isValidImage(current))) return current
 
   // Dead YouTube maxres → hqdefault (guaranteed to exist for a real video).
   const yt = current?.match(/ytimg\.com\/vi\/([A-Za-z0-9_-]{11})\/maxresdefault\.jpg/i)
@@ -162,6 +191,10 @@ export async function resolveCardImage(input: {
       if (await isValidImage(cand)) return cand
     }
   }
+
+  // Nothing better found: fall back to a generic share card if it at least
+  // loads, so the tile isn't empty.
+  if (current && currentIsGeneric && (await isValidImage(current))) return current
 
   return null
 }
