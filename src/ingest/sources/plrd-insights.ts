@@ -22,10 +22,15 @@ function absolutize(src: string): string {
   return SITE + (src.startsWith('/') ? src : '/' + src)
 }
 
-/** Decode the handful of HTML entities that appear in `alt` text, so it joins
- *  cleanly against the entity-decoded RSS titles. */
+/** Decode the HTML entities that appear in `alt` text, so it joins cleanly
+ *  against the entity-decoded RSS titles. Must cover NUMERIC entities too:
+ *  plrd.org encodes apostrophes as the hex entity `&#x27;` (e.g. "Don&#x27;t"),
+ *  so a titles-only match on named entities silently fails and the card loses
+ *  its YouTube thumbnail (falling back to the generic share card). */
 function decodeEntities(s: string): string {
   return s
+    .replace(/&#x([0-9a-fA-F]+);/g, (_m, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_m, d) => String.fromCodePoint(parseInt(d, 10)))
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
