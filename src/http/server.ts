@@ -66,7 +66,11 @@ import { broadcastRound } from '../bot/broadcast.js'
 const REPO_URL = 'https://github.com/lksbrssr/pl-radar'
 
 function formatDate(iso: string): string {
-  const d = new Date(iso.replace(' ', 'T') + 'Z')
+  // SQLite datetimes are "YYYY-MM-DD HH:MM:SS" (space-separated, no zone);
+  // content.published_at is a full ISO string (has 'T', ends with 'Z'). Only
+  // the SQLite form needs normalizing — blindly appending 'Z' to an ISO string
+  // yields "…ZZ" and an Invalid Date.
+  const d = new Date(iso.includes('T') ? iso : iso.replace(' ', 'T') + 'Z')
   return d.toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
@@ -90,7 +94,9 @@ function toRadarItem(
     type: card.type,
     areaLabel: card.area_label,
     areaSlug: card.area_slug,
-    date: card.edition ? editionLabel(card.edition) : formatDate(card.created_at),
+    // The actual publish date of the item — NOT the edition label, which would
+    // just repeat the Radar's own "<Month> Radar" title on every single card.
+    date: formatDate(card.published_at ?? card.created_at),
     image: card.image ?? undefined,
     _rating: Math.round(rating),
     ...(extra?.rd != null ? { _rd: Math.round(extra.rd) } : {}),
@@ -256,9 +262,7 @@ export function createServer() {
         source: card.source ?? undefined,
         areaLabel: card.area_label,
         areaSlug: card.area_slug,
-        date: card.edition
-          ? editionLabel(card.edition)
-          : formatDate(card.created_at),
+        date: formatDate(card.published_at ?? card.created_at),
         image: card.image ?? undefined,
         rank: idx + 1,
         inCut: idx < cutSize,
