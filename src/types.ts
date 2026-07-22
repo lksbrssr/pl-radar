@@ -63,6 +63,8 @@ export type Card = {
   rating: number
   matches: number
   created_at: string
+  /** Publish date of the underlying content (from content.published_at), when known. */
+  published_at: string | null
   /** Primary rhetorical hook (from card_attributes, attr_key='angle'). */
   angle: string | null
 }

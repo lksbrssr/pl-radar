@@ -207,7 +207,9 @@ const CARD_COLUMNS = `c.*, (
   SELECT a.attr_value FROM card_attributes a
   WHERE a.card_id = c.id AND a.attr_key = 'angle'
   LIMIT 1
-) AS angle`
+) AS angle, (
+  SELECT ct.published_at FROM content ct WHERE ct.id = c.content_id
+) AS published_at`
 
 export function getCard(id: number): Card | undefined {
   return db
